@@ -492,7 +492,7 @@
         const jamSekarangString = getFormattedGlobalTime();
 
         patients.forEach(p => {
-            // Update Tampilan Jam Global Real-Time di setiap tab panel
+            // PERBAIKAN: Jam global ditaruh di sini agar selalu di-update tanpa bergantung durasi operasi
             const elClock = document.getElementById(`global-clock-${p.id}`);
             if (elClock && p.id === currentActiveTab) {
                 elClock.innerText = jamSekarangString;
