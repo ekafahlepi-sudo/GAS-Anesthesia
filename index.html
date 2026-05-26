@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Anestesi v5 - Export Samsung Notes</title>
+    <title>Kalkulator Anestesi v5.1 - Waktu Real-Time</title>
     <style>
         :root {
             --primary: #2c3e50;
@@ -79,6 +79,23 @@
             border: 1px solid #ccc;
             border-radius: 4px;
             font-size: 14px;
+        }
+        .clock-display {
+            font-family: monospace;
+            background: #2c3e50;
+            color: #2ecc71;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        .time-info {
+            font-size: 12px;
+            color: #555;
+            margin-top: 4px;
+            display: block;
         }
         .stopwatch-controls {
             display: flex;
@@ -204,6 +221,10 @@
         startTime: null,
         elapsedTimeBefore: 0, 
         
+        // Fitur Waktu Baru
+        jamMulai: '-',
+        jamSelesai: '-',
+        
         accO2_L: 0,
         accN2O_L: 0,
         accAir_L: 0,
@@ -229,6 +250,14 @@
                         <div>
                             <label>Tanggal Tindakan</label>
                             <input type="date" id="tanggal-${p.id}" value="${p.tanggal}" oninput="updateData(${p.id}, 'tanggal', this.value)">
+                        </div>
+                        <div class="full-width" style="margin-top: 5px;">
+                            <label>Jam Global (Real-Time)</label>
+                            <div class="clock-display" id="global-clock-${p.id}">00:00:00</div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+                                <span class="time-info">▶ Mulai: <strong id="lbl-mulai-${p.id}">${p.jamMulai}</strong></span>
+                                <span class="time-info">⏹ Selesai: <strong id="lbl-selesai-${p.id}">${p.jamSelesai}</strong></span>
+                            </div>
                         </div>
                     </div>
 
@@ -380,11 +409,24 @@
         updateCalculations();
     }
 
+    function getFormattedGlobalTime() {
+        const now = new Date();
+        return now.toTimeString().split(' ')[0]; // Mengembalikan format "HH:MM:SS"
+    }
+
     function startTimer(id) {
         const p = patients[id - 1];
         if (p.isRunning) return;
+        
         p.isRunning = true;
         p.startTime = Date.now();
+        
+        // Catat Jam Mulai secara otomatis jika belum pernah ditekan (atau setelah reset)
+        if (p.jamMulai === '-') {
+            p.jamMulai = getFormattedGlobalTime();
+            document.getElementById(`lbl-mulai-${id}`).innerText = p.jamMulai;
+        }
+        
         document.getElementById(`btn-start-${id}`).disabled = true;
         document.getElementById(`btn-end-${id}`).disabled = false;
         
@@ -396,9 +438,15 @@
     function stopTimer(id) {
         const p = patients[id - 1];
         if (!p.isRunning) return;
+        
         p.isRunning = false;
         p.elapsedTimeBefore += Date.now() - p.startTime;
         p.startTime = null;
+        
+        // Catat Jam Selesai secara otomatis mengikuti jam global saat ini
+        p.jamSelesai = getFormattedGlobalTime();
+        document.getElementById(`lbl-selesai-${id}`).innerText = p.jamSelesai;
+
         document.getElementById(`btn-start-${id}`).disabled = false;
         document.getElementById(`btn-end-${id}`).disabled = true;
 
@@ -413,6 +461,8 @@
         p.isRunning = false;
         p.startTime = null;
         p.elapsedTimeBefore = 0;
+        p.jamMulai = '-';
+        p.jamSelesai = '-';
         p.accO2_L = 0;
         p.accN2O_L = 0;
         p.accAir_L = 0;
@@ -426,6 +476,8 @@
         statusBadge.className = "status-badge stopped";
 
         document.getElementById(`timer-display-${id}`).innerText = "00:00:00";
+        document.getElementById(`lbl-mulai-${id}`).innerText = "-";
+        document.getElementById(`lbl-selesai-${id}`).innerText = "-";
         document.getElementById(`accO2-${id}`).innerText = "0.00";
         document.getElementById(`accO2L-${id}`).innerText = "0";
         document.getElementById(`accN2O-${id}`).innerText = "0.00";
@@ -437,8 +489,15 @@
 
     function updateCalculations() {
         const sekarang = Date.now();
+        const jamSekarangString = getFormattedGlobalTime();
 
         patients.forEach(p => {
+            // Update Tampilan Jam Global Real-Time di setiap tab panel
+            const elClock = document.getElementById(`global-clock-${p.id}`);
+            if (elClock && p.id === currentActiveTab) {
+                elClock.innerText = jamSekarangString;
+            }
+
             let totalMilidetik = p.elapsedTimeBefore;
             if (p.isRunning) {
                 totalMilidetik += (sekarang - p.startTime);
@@ -515,6 +574,7 @@
         const totalJam = (totalMilidetik / 3600000).toFixed(2);
 
         return `TANGGAL TINDAKAN: ${p.tanggal}\n` +
+               `WAKTU OPERASI: ${p.jamMulai} s/d ${p.jamSelesai}\n` +
                `NAMA PASIEN: ${p.nama || '-'}\n\n` +
                `====== PEMAKAIAN GAS ======\n` +
                `• O2: ${totalJam} Jam (${Math.floor(p.accO2_L)} L)\n` +
@@ -541,6 +601,8 @@
         let csvContent = "data:text/csv;charset=utf-8,";
         csvContent += "Parameter,Nilai\n";
         csvContent += `Tanggal Tindakan,${p.tanggal}\n`;
+        csvContent += `Jam Mulai,${p.jamMulai}\n`;
+        csvContent += `Jam Selesai,${p.jamSelesai}\n`;
         csvContent += `Nama Pasien,${p.nama || '-'}\n`;
         csvContent += `Durasi Operasi,${hrs}:${mins}:${secs}\n`;
         csvContent += `Akumulasi O2 (Jam),${(totalMilidetik / 3600000).toFixed(2)}\n`;
@@ -568,17 +630,12 @@
         window.open(url, '_blank');
     }
 
-    // FITUR BARU: Export Ke Samsung Notes via Clipboard intent
     function exportToSamsungNotes(id) {
         const p = patients[id - 1];
         const textToCopy = generateSummaryText(p);
 
-        // 1. Menyalin teks rangkuman ke Clipboard perangkat secara otomatis
         navigator.clipboard.writeText(textToCopy).then(() => {
             alert("Rangkuman data Pasien " + id + " berhasil DI-COPY!\n\nSetelah ini Samsung Notes akan otomatis terbuka, Anda tinggal menekan tahan layar lalu pilih 'TEMPEL / PASTE'.");
-            
-            // 2. Memicu Deeplink URI Scheme Android untuk membuka Samsung Notes
-            // Metode ini memanggil package resmi Samsung Notes secara background
             window.location.href = "intent://#Intent;scheme=samsungnotes;package=com.samsung.android.app.notes;end";
         }).catch(err => {
             alert("Gagal menyalin data otomatis. Silakan salin manual.");
