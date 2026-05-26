@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kalkulator Anestesi v2</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --success: #27ae60;
+            --danger: #c0392b;
+            --accent: #2980b9;
+            --bg: #f5f6fa;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 15px;
+            color: #333;
+        }
+        h2 {
+            text-align: center;
+            color: var(--primary);
+            margin-bottom: 20px;
+        }
+        .tabs {
+            display: flex;
+            overflow-x: auto;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #ddd;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: #e0e0e0;
+            cursor: pointer;
+            font-weight: bold;
+            border-top-left-radius: 5px;
+            border-top-right-radius: 5px;
+            margin-right: 2px;
+            white-space: nowrap;
+        }
+        .tab-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+        .patient-panel {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .patient-panel.active {
+            display: block;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .full-width {
+            grid-column: span 2;
+        }
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .stopwatch-controls {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-start { background-color: var(--success); }
+        .btn-end { background-color: #f39c12; }
+        .btn-reset { background-color: var(--danger); }
+        .btn-action { background-color: var(--accent); margin-top: 5px;}
+        .btn-wa { background-color: #25D366; margin-top: 5px;}
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        
+        .result-box {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            border-left: 5px solid var(--accent);
+        }
+        .result-box h4 { margin-top: 0; color: var(--primary); }
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            color: white;
+            margin-bottom: 10px;
+        }
+        .running { background-color: var(--success); }
+        .stopped { background-color: var(--danger); }
+        
+        .action-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Kalkulator Gas Anestesia (5 Pasien)</h2>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchPatient(1)">Pasien 1</button>
+        <button class="tab-btn" onclick="switchPatient(2)">Pasien 2</button>
+        <button class="tab-btn" onclick="switchPatient(3)">Pasien 3</button>
+        <button class="tab-btn" onclick="switchPatient(4)">Pasien 4</button>
+        <button class="tab-btn" onclick="switchPatient(5)">Pasien 5</button>
+    </div>
+
+    <div id="patient-containers">
+        </div>
+
+<script>
+    const patients = Array.from({ length: 5 }, (_, i) => ({
+        id: i + 1,
+        nama: '',
+        o2: 0,
+        carrierType: 'N2O', 
+        carrierFlow: 0,
+        gasType: 'Sevoflurane', 
+        gasVol: 0, 
+        
+        isRunning: false,
+        startTime: null,
+        elapsedTimeBefore: 0, 
+        
+        accO2_L: 0,
+        accN2O_L: 0,
+        accAir_L: 0,
+        accGas_mL: 0,
+        
+        catatan: ''
+    }));
+
+    let currentActiveTab = 1;
+
+    function initApp() {
+        const container = document.getElementById('patient-containers');
+        container.innerHTML = '';
+
+        patients.forEach(p => {
+            container.innerHTML += `
+                <div id="panel-${p.id}" class="patient-panel ${p.id === 1 ? 'active' : ''}">
+                    <div style="margin-bottom: 15px;">
+                        <label>Nama Pasien</label>
+                        <input type="text" id="nama-${p.id}" value="${p.nama}" oninput="updateData(${p.id}, 'nama', this.value)" placeholder="Masukkan nama pasien">
+                    </div>
+
+                    <hr style="border: 0.5px solid #ddd; margin: 15px 0;">
+
+                    <div class="grid">
+                        <div>
+                            <label>Oksigen (O2) - L/Menit</label>
+                            <input type="number" step="0.1" id="o2-${p.id}" value="${p.o2}" oninput="updateData(${p.id}, 'o2', this.value)">
+                        </div>
+                        <div>
+                            <label>Gas Pendorong (Carrier)</label>
+                            <select id="carrierType-${p.id}" onchange="updateData(${p.id}, 'carrierType', this.value)">
+                                <option value="N2O">N2O</option>
+                                <option value="AIR">AIR (Udara)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Flow Carrier - L/Menit</label>
+                            <input type="number" step="0.1" id="carrierFlow-${p.id}" value="${p.carrierFlow}" oninput="updateData(${p.id}, 'carrierFlow', this.value)">
+                        </div>
+                        <div>
+                            <label>Agen Volatil</label>
+                            <select id="gasType-${p.id}" onchange="updateData(${p.id}, 'gasType', this.value)">
+                                <option value="Sevoflurane">Sevoflurane (183)</option>
+                                <option value="Isoflurane">Isoflurane (194)</option>
+                            </select>
+                        </div>
+                        <div class="full-width">
+                            <label>Konsentrasi Gas (%) - Contoh: 1, 2</label>
+                            <input type="number" step="0.1" id="gasVol-${p.id}" value="${p.gasVol}" oninput="updateData(${p.id}, 'gasVol', this.value)">
+                        </div>
+                    </div>
+
+                    <div class="stopwatch-controls">
+                        <button class="btn-start" id="btn-start-${p.id}" onclick="startTimer(${p.id})">START</button>
+                        <button class="btn-end" id="btn-end-${p.id}" onclick="stopTimer(${p.id})" disabled>END / PAUSE</button>
+                        <button class="btn-reset" id="btn-reset-${p.id}" onclick="resetTimer(${p.id})">RESET</button>
+                    </div>
+
+                    <div class="result-box">
+                        <span id="status-${p.id}" class="status-badge stopped">OFF</span>
+                        <strong>Durasi Operasi: <span id="timer-display-${p.id}">00:00:00</span></strong>
+                        <h4 style="margin-top: 10px; margin-bottom: 5px;">Akumulasi Pemakaian Gas:</h4>
+                        <table style="width:100%; font-size: 14px;">
+                            <tr><td>Oksigen (O2)</td><td>: <span id="accO2-${p.id}">0.00</span> Jam (<span id="accO2L-${p.id}">0</span> L)</td></tr>
+                            <tr><td>N2O</td><td>: <span id="accN2O-${p.id}">0.00</span> Liter</td></tr>
+                            <tr><td>AIR (Udara)</td><td>: <span id="accAir-${p.id}">0.00</span> Liter</td></tr>
+                            <tr><td>Gas Anestesi (<span id="lblGas-${p.id}">Sevo</span>)</td><td>: <strong><span id="accGas-${p.id}">0.00</span> mL cairan</strong></td></tr>
+                        </table>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <label>Catatan Bebas</label>
+                        <textarea id="catatan-${p.id}" rows="3" oninput="updateData(${p.id}, 'catatan', this.value)" placeholder="Tambahkan text yang diinginkan...">${p.catatan}</textarea>
+                    </div>
+
+                    <div class="action-group">
+                        <button class="btn-action" onclick="exportToCSV(${p.id})">Export ke CSV (.csv)</button>
+                        <button class="btn-wa" onclick="shareToWhatsApp(${p.id})">Kirim Summary ke WA</button>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    function switchPatient(id) {
+        currentActiveTab = id;
+        document.querySelectorAll('.tab-btn').forEach((btn, index) => {
+            btn.classList.toggle('active', index === id - 1);
+        });
+        document.querySelectorAll('.patient-panel').forEach((panel, index) => {
+            panel.classList.toggle('active', index === id - 1);
+        });
+    }
+
+    function updateData(id, field, value) {
+        const p = patients[id - 1];
+        if(field === 'o2' || field === 'carrierFlow' || field === 'gasVol') {
+            p[field] = parseFloat(value) || 0;
+        } else {
+            p[field] = value;
+        }
+        if (field === 'gasType') {
+            document.getElementById(`lblGas-${id}`).innerText = value === 'Sevoflurane' ? 'Sevo' : 'Iso';
+        }
+    }
+
+    function startTimer(id) {
+        const p = patients[id - 1];
+        if (p.isRunning) return;
+        p.isRunning = true;
+        p.startTime = Date.now();
+        document.getElementById(`btn-start-${id}`).disabled = true;
+        document.getElementById(`btn-end-${id}`).disabled = false;
+        
+        const statusBadge = document.getElementById(`status-${id}`);
+        statusBadge.innerText = "RUNNING IN BACKGROUND";
+        statusBadge.className = "status-badge running";
+    }
+
+    function stopTimer(id) {
+        const p = patients[id - 1];
+        if (!p.isRunning) return;
+        p.isRunning = false;
+        p.elapsedTimeBefore += Date.now() - p.startTime;
+        p.startTime = null;
+        document.getElementById(`btn-start-${id}`).disabled = false;
+        document.getElementById(`btn-end-${id}`).disabled = true;
+
+        const statusBadge = document.getElementById(`status-${id}`);
+        statusBadge.innerText = "PAUSED";
+        statusBadge.className = "status-badge stopped";
+    }
+
+    function resetTimer(id) {
+        if (!confirm("Reset data pasien ini?")) return;
+        const p = patients[id - 1];
+        p.isRunning = false;
+        p.startTime = null;
+        p.elapsedTimeBefore = 0;
+        p.accO2_L = 0;
+        p.accN2O_L = 0;
+        p.accAir_L = 0;
+        p.accGas_mL = 0;
+
+        document.getElementById(`btn-start-${id}`).disabled = false;
+        document.getElementById(`btn-end-${id}`).disabled = true;
+        
+        const statusBadge = document.getElementById(`status-${id}`);
+        statusBadge.innerText = "OFF";
+        statusBadge.className = "status-badge stopped";
+
+        document.getElementById(`timer-display-${id}`).innerText = "00:00:00";
+        document.getElementById(`accO2-${id}`).innerText = "0.00";
+        document.getElementById(`accO2L-${id}`).innerText = "0";
+        document.getElementById(`accN2O-${id}`).innerText = "0.00";
+        document.getElementById(`accAir-${id}`).innerText = "0.00";
+        document.getElementById(`accGas-${id}`).innerText = "0.00";
+    }
+
+    function updateCalculations() {
+        const sekarang = Date.now();
+        patients.forEach(p => {
+            let totalMilidetik = p.elapsedTimeBefore;
+            if (p.isRunning) {
+                totalMilidetik += (sekarang - p.startTime);
+            }
+            if (totalMilidetik <= 0) return;
+
+            const totalDetik = Math.floor(totalMilidetik / 1000);
+            const totalMenit = totalMilidetik / 60000;
+            const totalJam = totalMilidetik / 3600000;
+
+            const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
+            const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
+            const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
+            
+            if (p.id === currentActiveTab) {
+                document.getElementById(`timer-display-${p.id}`).innerText = `${hrs}:${mins}:${secs}`;
+            }
+
+            p.accO2_L = p.o2 * totalMenit;
+            if (p.carrierType === 'N2O') {
+                p.accN2O_L = p.carrierFlow * totalMenit;
+                p.accAir_L = 0;
+            } else {
+                p.accAir_L = p.carrierFlow * totalMenit;
+                p.accN2O_L = 0;
+            }
+
+            const totalFlowGasMedis = p.o2 + p.carrierFlow; 
+            const pembagi = (p.gasType === 'Sevoflurane') ? 183 : 194;
+            p.accGas_mL = (p.gasVol * totalFlowGasMedis * 10 * totalMenit) / pembagi;
+
+            if (p.id === currentActiveTab) {
+                document.getElementById(`accO2-${p.id}`).innerText = totalJam.toFixed(2);
+                document.getElementById(`accO2L-${p.id}`).innerText = Math.floor(p.accO2_L);
+                document.getElementById(`accN2O-${p.id}`).innerText = p.accN2O_L.toFixed(1);
+                document.getElementById(`accAir-${p.id}`).innerText = p.accAir_L.toFixed(1);
+                document.getElementById(`accGas-${p.id}`).innerText = p.accGas_mL.toFixed(2);
+            }
+        });
+    }
+
+    // Fungsi Membuat Teks Summary Sesuai Format Permintaan
+    function generateSummaryText(p) {
+        let totalMilidetik = p.elapsedTimeBefore;
+        if (p.isRunning) totalMilidetik += (Date.now() - p.startTime);
+        const totalDetik = Math.floor(totalMilidetik / 1000);
+        const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
+        const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
+        const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
+        const durasi = `${hrs}:${mins}:${secs}`;
+        const totalJam = (totalMilidetik / 3600000).toFixed(2);
+
+        // Format teks presisi sesuai contoh Anda
+        return `nama: ${p.nama || '-'}\n` +
+               `pemakaian gas:\n` +
+               ` - O2: ${totalJam} Jam (${Math.floor(p.accO2_L)} L)\n` +
+               ` - N2O: ${p.accN2O_L.toFixed(1)} Liter\n` +
+               ` - AIR: ${p.accAir_L.toFixed(1)} Liter\n` +
+               ` - ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan (${p.gasVol}%)\n` +
+               `durasi operasi: ${durasi}\n` +
+               `catatan: ${p.catatan || '-'}`;
+    }
+
+    // Ekspor Data ke File CSV untuk HP Android
+    function exportToCSV(id) {
+        const p = patients[id - 1];
+        let totalMilidetik = p.elapsedTimeBefore;
+        if (p.isRunning) totalMilidetik += (Date.now() - p.startTime);
+        const totalDetik = Math.floor(totalMilidetik / 1000);
+        const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
+        const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
+        const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
+
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Parameter,Nilai\n";
+        csvContent += `Nama Pasien,${p.nama || '-'}\n`;
+        csvContent += `Durasi Operasi,${hrs}:${mins}:${secs}\n`;
+        csvContent += `Akumulasi O2 (Jam),${(totalMilidetik / 3600000).toFixed(2)}\n`;
+        csvContent += `Akumulasi O2 (Liter),${Math.floor(p.accO2_L)}\n`;
+        csvContent += `Akumulasi N2O (Liter),${p.accN2O_L.toFixed(1)}\n`;
+        csvContent += `Akumulasi AIR (Liter),${p.accAir_L.toFixed(1)}\n`;
+        csvContent += `Cairan ${p.gasType} (mL),${p.accGas_mL.toFixed(2)}\n`;
+        csvContent += `Catatan,"${p.catatan || '-'}"\n`;
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Summary_Anestesi_${p.nama || 'Pasien_'+id}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // Kirim / Share Langsung Ke WhatsApp
+    function shareToWhatsApp(id) {
+        const p = patients[id - 1];
+        const text = generateSummaryText(p);
+        const url = "https://api.whatsapp.com/send?text=" + encodeURIComponent(text);
+        window.open(url, '_blank');
+    }
+
+    initApp();
+    setInterval(updateCalculations, 1000);
+</script>
+
+</body>
+</html>
