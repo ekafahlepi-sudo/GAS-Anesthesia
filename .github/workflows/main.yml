@@ -1,0 +1,54 @@
+name: Build Android APK (Cordova)
+
+on:
+  push:
+    branches: [ main ] # Berjalan otomatis setiap ada push ke branch main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+
+    - name: Install Cordova
+      run: npm install -g cordova
+
+    - name: Create Cordova Project
+      run: |
+        cordova create myapp com.anestesi.kalkulator "Kalkulator Anestesi"
+        cd myapp
+        cordova platform add android
+        
+    - name: Copy HTML Files to Cordova www
+      run: |
+        rm -rf myapp/www/*
+        cp -r * myapp/www/ || true
+        # Memastikan file in.html otomatis terbaca sebagai index.html aplikasi
+        if [ -f "myapp/www/in.html" ]; then mv myapp/www/in.html myapp/www/index.html; fi
+
+    - name: Setup Java JDK
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'zulu'
+        java-version: '11'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+
+    - name: Build APK
+      run: |
+        cd myapp
+        cordova build android --device
+
+    - name: Upload APK Release Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: Kalkulator-Anestesi-APK
+        path: myapp/platforms/android/app/build/outputs/apk/debug/app-debug.apk
