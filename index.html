@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Anestesi v5.1 - Waktu Real-Time</title>
+    <title>Kalkulator Anestesi v5.2 - Satuan cc</title>
     <style>
         :root {
             --primary: #2c3e50;
@@ -202,6 +202,7 @@
 <script>
     const today = new Date().toISOString().split('T')[0];
 
+    // Mengubah default stock baseline ke cc (250 cc)
     const patients = Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
         nama: '',
@@ -212,16 +213,15 @@
         gasType: 'Sevoflurane', 
         gasVol: 0, 
         
-        stockSevo: 0.25,
-        stockIso: 0.25,
-        remainingSevo: 0.25,
-        remainingIso: 0.25,
+        stockSevo: 250, // diubah ke cc
+        stockIso: 250,  // diubah ke cc
+        remainingSevo: 250,
+        remainingIso: 250,
         
         isRunning: false,
         startTime: null,
         elapsedTimeBefore: 0, 
         
-        // Fitur Waktu Baru
         jamMulai: '-',
         jamSelesai: '-',
         
@@ -306,32 +306,32 @@
                             <tr><td>Oksigen (O2)</td><td>: <span id="accO2-${p.id}">0.00</span> Jam (<span id="accO2L-${p.id}">0</span> L)</td></tr>
                             <tr><td>N2O</td><td>: <span id="accN2O-${p.id}">0.00</span> Liter</td></tr>
                             <tr><td>AIR (Udara)</td><td>: <span id="accAir-${p.id}">0.00</span> Liter</td></tr>
-                            <tr><td>Gas Anestesi (<span id="lblGas-${p.id}">Sevo</span>)</td><td>: <strong><span id="accGas-${p.id}">0.00</span> mL cairan</strong></td></tr>
+                            <tr><td>Gas Anestesi (<span id="lblGas-${p.id}">Sevo</span>)</td><td>: <strong><span id="accGas-${p.id}">0.00</span> cc (mL)</strong></td></tr>
                         </table>
                     </div>
 
-                    <label style="font-size: 15px; color: var(--primary); margin-bottom: 10px;">📦 Manajemen Stok Gas Pasien Ini (Liter)</label>
+                    <label style="font-size: 15px; color: var(--primary); margin-bottom: 10px;">📦 Manajemen Stok Gas Pasien Ini (cc / mL)</label>
                     <div class="grid" style="margin-bottom: 20px;">
                         <div class="patient-stock-box">
-                            <label for="input-stock-sevo-${p.id}">Stok Awal Sevoflurane (L)</label>
-                            <input type="number" step="0.01" id="input-stock-sevo-${p.id}" value="${p.stockSevo}" oninput="updatePatientStockBaseline(${p.id}, 'Sevoflurane', this.value)">
-                            <div class="stock-remaining">Sisa: <span id="display-stock-sevo-${p.id}">${p.remainingSevo.toFixed(3)}</span> L</div>
+                            <label for="input-stock-sevo-${p.id}">Stok Awal Sevoflurane (cc)</label>
+                            <input type="number" step="1" id="input-stock-sevo-${p.id}" value="${p.stockSevo}" oninput="updatePatientStockBaseline(${p.id}, 'Sevoflurane', this.value)">
+                            <div class="stock-remaining">Sisa: <span id="display-stock-sevo-${p.id}">${p.remainingSevo.toFixed(1)}</span> cc</div>
                             
-                            <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (L):</label>
+                            <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (cc):</label>
                             <div class="topup-group">
-                                <input type="number" step="0.01" id="flex-add-sevo-${p.id}" placeholder="Isi L bebas...">
+                                <input type="number" step="1" id="flex-add-sevo-${p.id}" placeholder="Isi cc bebas...">
                                 <button class="btn-topup-flex" onclick="topUpPatientStockFlexible(${p.id}, 'Sevoflurane')">+</button>
                             </div>
                         </div>
                         
                         <div class="patient-stock-box">
-                            <label for="input-stock-iso-${p.id}">Stok Awal Isoflurane (L)</label>
-                            <input type="number" step="0.01" id="input-stock-iso-${p.id}" value="${p.stockIso}" oninput="updatePatientStockBaseline(${p.id}, 'Isoflurane', this.value)">
-                            <div class="stock-remaining">Sisa: <span id="display-stock-iso-${p.id}">${p.remainingIso.toFixed(3)}</span> L</div>
+                            <label for="input-stock-iso-${p.id}">Stok Awal Isoflurane (cc)</label>
+                            <input type="number" step="1" id="input-stock-iso-${p.id}" value="${p.stockIso}" oninput="updatePatientStockBaseline(${p.id}, 'Isoflurane', this.value)">
+                            <div class="stock-remaining">Sisa: <span id="display-stock-iso-${p.id}">${p.remainingIso.toFixed(1)}</span> cc</div>
                             
-                            <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (L):</label>
+                            <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (cc):</label>
                             <div class="topup-group">
-                                <input type="number" step="0.01" id="flex-add-iso-${p.id}" placeholder="Isi L bebas...">
+                                <input type="number" step="1" id="flex-add-iso-${p.id}" placeholder="Isi cc bebas...">
                                 <button class="btn-topup-flex" onclick="topUpPatientStockFlexible(${p.id}, 'Isoflurane')">+</button>
                             </div>
                         </div>
@@ -393,16 +393,16 @@
         let amountToAdd = parseFloat(addInputField.value) || 0;
         
         if (amountToAdd <= 0) {
-            alert("Silakan masukkan angka volume cairan (Liter) yang valid.");
+            alert("Silakan masukkan angka volume cairan (cc) yang valid.");
             return;
         }
         
         if (type === 'Sevoflurane') {
             p.stockSevo += amountToAdd;
-            baseInputField.value = p.stockSevo.toFixed(3);
+            baseInputField.value = p.stockSevo.toFixed(1);
         } else {
             p.stockIso += amountToAdd;
-            baseInputField.value = p.stockIso.toFixed(3);
+            baseInputField.value = p.stockIso.toFixed(1);
         }
         
         addInputField.value = "";
@@ -411,7 +411,7 @@
 
     function getFormattedGlobalTime() {
         const now = new Date();
-        return now.toTimeString().split(' ')[0]; // Mengembalikan format "HH:MM:SS"
+        return now.toTimeString().split(' ')[0];
     }
 
     function startTimer(id) {
@@ -421,7 +421,6 @@
         p.isRunning = true;
         p.startTime = Date.now();
         
-        // Catat Jam Mulai secara otomatis jika belum pernah ditekan (atau setelah reset)
         if (p.jamMulai === '-') {
             p.jamMulai = getFormattedGlobalTime();
             document.getElementById(`lbl-mulai-${id}`).innerText = p.jamMulai;
@@ -443,7 +442,6 @@
         p.elapsedTimeBefore += Date.now() - p.startTime;
         p.startTime = null;
         
-        // Catat Jam Selesai secara otomatis mengikuti jam global saat ini
         p.jamSelesai = getFormattedGlobalTime();
         document.getElementById(`lbl-selesai-${id}`).innerText = p.jamSelesai;
 
@@ -492,7 +490,6 @@
         const jamSekarangString = getFormattedGlobalTime();
 
         patients.forEach(p => {
-            // PERBAIKAN: Jam global ditaruh di sini agar selalu di-update tanpa bergantung durasi operasi
             const elClock = document.getElementById(`global-clock-${p.id}`);
             if (elClock && p.id === currentActiveTab) {
                 elClock.innerText = jamSekarangString;
@@ -538,27 +535,28 @@
                 }
             }
 
-            let usedSevo_L = 0;
-            let usedIso_L = 0;
+            // Pengurangan langsung dalam cc (accGas_mL sama dengan cc)
+            let usedSevo_cc = 0;
+            let usedIso_cc = 0;
 
             if (p.gasType === 'Sevoflurane') {
-                usedSevo_L = p.accGas_mL / 1000;
+                usedSevo_cc = p.accGas_mL;
             } else if (p.gasType === 'Isoflurane') {
-                usedIso_L = p.accGas_mL / 1000;
+                usedIso_cc = p.accGas_mL;
             }
 
-            p.remainingSevo = p.stockSevo - usedSevo_L;
-            p.remainingIso = p.stockIso - usedIso_L;
+            p.remainingSevo = p.stockSevo - usedSevo_cc;
+            p.remainingIso = p.stockIso - usedIso_cc;
 
             const elSevo = document.getElementById(`display-stock-sevo-${p.id}`);
             const elIso = document.getElementById(`display-stock-iso-${p.id}`);
             
             if (elSevo && elIso) {
-                elSevo.innerText = p.remainingSevo.toFixed(3);
-                elIso.innerText = p.remainingIso.toFixed(3);
+                elSevo.innerText = p.remainingSevo.toFixed(1);
+                elIso.innerText = p.remainingIso.toFixed(1);
 
-                elSevo.style.color = p.remainingSevo < 0.01 ? 'var(--danger)' : 'var(--primary)';
-                elIso.style.color = p.remainingIso < 0.01 ? 'var(--danger)' : 'var(--primary)';
+                elSevo.style.color = p.remainingSevo < 10 ? 'var(--danger)' : 'var(--primary)';
+                elIso.style.color = p.remainingIso < 10 ? 'var(--danger)' : 'var(--primary)';
             }
         });
     }
@@ -580,11 +578,11 @@
                `• O2: ${totalJam} Jam (${Math.floor(p.accO2_L)} L)\n` +
                `• N2O: ${p.accN2O_L.toFixed(1)} Liter\n` +
                `• AIR: ${p.accAir_L.toFixed(1)} Liter\n` +
-               `• ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan (${p.gasVol}%)\n` +
+               `• ${p.gasType}: ${p.accGas_mL.toFixed(2)} cc (mL) (${p.gasVol}%)\n` +
                `• Durasi Operasi: ${durasi}\n\n` +
                `====== SISA STOK PASIEN ======\n` +
-               `• Sisa Sevoflurane: ${p.remainingSevo.toFixed(3)} L\n` +
-               `• Sisa Isoflurane: ${p.remainingIso.toFixed(3)} L\n\n` +
+               `• Sisa Sevoflurane: ${p.remainingSevo.toFixed(1)} cc\n` +
+               `• Sisa Isoflurane: ${p.remainingIso.toFixed(1)} cc\n\n` +
                `====== CATATAN ======\n` +
                `${p.catatan || '-'}`;
     }
@@ -609,9 +607,9 @@
         csvContent += `Akumulasi O2 (Liter),${Math.floor(p.accO2_L)}\n`;
         csvContent += `Akumulasi N2O (Liter),${p.accN2O_L.toFixed(1)}\n`;
         csvContent += `Akumulasi AIR (Liter),${p.accAir_L.toFixed(1)}\n`;
-        csvContent += `Cairan ${p.gasType} (mL),${p.accGas_mL.toFixed(2)}\n`;
-        csvContent += `Sisa Stok Sevoflurane Pasien (L),${p.remainingSevo.toFixed(3)}\n`;
-        csvContent += `Sisa Stok Isoflurane Pasien (L),${p.remainingIso.toFixed(3)}\n`;
+        csvContent += `Cairan ${p.gasType} (cc),${p.accGas_mL.toFixed(2)}\n`;
+        csvContent += `Sisa Stok Sevoflurane Pasien (cc),${p.remainingSevo.toFixed(1)}\n`;
+        csvContent += `Sisa Stok Isoflurane Pasien (cc),${p.remainingIso.toFixed(1)}\n`;
         csvContent += `Catatan,"${p.catatan || '-'}"\n`;
 
         const encodedUri = encodeURI(csvContent);
