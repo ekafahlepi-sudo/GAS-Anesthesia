@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Anestesi v5.2 - Satuan cc</title>
+    <title>Kalkulator Anestesi v5.2 - Satuan Murni cc</title>
     <style>
         :root {
             --primary: #2c3e50;
@@ -202,7 +202,7 @@
 <script>
     const today = new Date().toISOString().split('T')[0];
 
-    // Mengubah default stock baseline ke cc (250 cc)
+    // FIX: Mengubah seluruh set dasar stok awal langsung menjadi 250 cc
     const patients = Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
         nama: '',
@@ -213,8 +213,8 @@
         gasType: 'Sevoflurane', 
         gasVol: 0, 
         
-        stockSevo: 250, // diubah ke cc
-        stockIso: 250,  // diubah ke cc
+        stockSevo: 250, // diubah menjadi cc
+        stockIso: 250,  // diubah menjadi cc
         remainingSevo: 250,
         remainingIso: 250,
         
@@ -228,7 +228,7 @@
         accO2_L: 0,
         accN2O_L: 0,
         accAir_L: 0,
-        accGas_mL: 0,
+        accGas_mL: 0, // Nilai pemakaian formula dasar sudah mL (setara cc)
         
         catatan: ''
     }));
@@ -319,7 +319,7 @@
                             
                             <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (cc):</label>
                             <div class="topup-group">
-                                <input type="number" step="1" id="flex-add-sevo-${p.id}" placeholder="Isi cc bebas...">
+                                <input type="number" step="1" id="flex-add-sevo-${p.id}" placeholder="Isi cc...">
                                 <button class="btn-topup-flex" onclick="topUpPatientStockFlexible(${p.id}, 'Sevoflurane')">+</button>
                             </div>
                         </div>
@@ -331,7 +331,7 @@
                             
                             <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (cc):</label>
                             <div class="topup-group">
-                                <input type="number" step="1" id="flex-add-iso-${p.id}" placeholder="Isi cc bebas...">
+                                <input type="number" step="1" id="flex-add-iso-${p.id}" placeholder="Isi cc...">
                                 <button class="btn-topup-flex" onclick="topUpPatientStockFlexible(${p.id}, 'Isoflurane')">+</button>
                             </div>
                         </div>
@@ -535,7 +535,7 @@
                 }
             }
 
-            // Pengurangan langsung dalam cc (accGas_mL sama dengan cc)
+            // FIX PERBAIKAN: Pengurangan langsung dalam satuan cc (accGas_mL nilainya sama dengan cc)
             let usedSevo_cc = 0;
             let usedIso_cc = 0;
 
