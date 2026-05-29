@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Anestesi v5.3 - Real-Time Accumulation</title>
+    <title>Kalkulator Anestesi v5.5 - Anti-Data Loss</title>
     <style>
         :root {
             --primary: #2c3e50;
@@ -187,72 +187,90 @@
 </head>
 <body>
 
-    <h2>Kalkulator Gas Anestesia (Stok Mandiri Per Pasien)</h2>
+    <h2>Kalkulator Gas Anestesia (Anti Hapus Latar Belakang)</h2>
 
     <div class="tabs">
-        <button class="tab-btn active" onclick="switchPatient(1)">Pasien 1</button>
-        <button class="tab-btn" onclick="switchPatient(2)">Pasien 2</button>
-        <button class="tab-btn" onclick="switchPatient(3)">Pasien 3</button>
-        <button class="tab-btn" onclick="switchPatient(4)">Pasien 4</button>
-        <button class="tab-btn" onclick="switchPatient(5)">Pasien 5</button>
+        <button class="tab-btn active" id="tab-btn-1" onclick="switchPatient(1)">Pasien 1</button>
+        <button class="tab-btn" id="tab-btn-2" onclick="switchPatient(2)">Pasien 2</button>
+        <button class="tab-btn" id="tab-btn-3" onclick="switchPatient(3)">Pasien 3</button>
+        <button class="tab-btn" id="tab-btn-4" onclick="switchPatient(4)">Pasien 4</button>
+        <button class="tab-btn" id="tab-btn-5" onclick="switchPatient(5)">Pasien 5</button>
     </div>
 
     <div id="patient-containers"></div>
 
 <script>
     const today = new Date().toISOString().split('T')[0];
-
-    // Menggunakan basis data ter-update per detik untuk akumulasi riil
-    const patients = Array.from({ length: 5 }, (_, i) => ({
-        id: i + 1,
-        nama: '',
-        tanggal: today,
-        o2: 0,
-        carrierType: 'N2O', 
-        carrierFlow: 0,
-        gasType: 'Sevoflurane', 
-        gasVol: 0, 
-        
-        stockSevo: 250,
-        stockIso: 250,
-        remainingSevo: 250,
-        remainingIso: 250,
-        
-        isRunning: false,
-        lastTickTime: null, // Melacak waktu update terakhir untuk presisi mili detik
-        totalElapsedMs: 0,  // Menyimpan durasi berjalan kumulatif asli
-        
-        jamMulai: '-',
-        jamSelesai: '-',
-        
-        accO2_L: 0,
-        accN2O_L: 0,
-        accAir_L: 0,
-        accGas_mL: 0,
-        
-        catatan: ''
-    }));
-
     let currentActiveTab = 1;
+    let patients = [];
+
+    // FUNGSI UTAMA: Memuat data dari memori permanen HP jika ada
+    function loadSavedData() {
+        const localData = localStorage.getItem('anestesi_patients_data');
+        if (localData) {
+            try {
+                patients = JSON.parse(localData);
+                // Pastikan lastTickTime diperbarui jika aplikasi mati saat keadaan RUNNING
+                const sekarang = Date.now();
+                patients.forEach(p => {
+                    if (p.isRunning && p.lastTickTime) {
+                        // Jalankan hitungan otomatis mengejar durasi mati tadi
+                        const deltaMs = sekarang - p.lastTickTime;
+                        if (deltaMs > 0) {
+                            const deltaMenit = deltaMs / 60000;
+                            p.totalElapsedMs += deltaMs;
+                            p.accO2_L += p.o2 * deltaMenit;
+                            if (p.carrierType === 'N2O') p.accN2O_L += p.carrierFlow * deltaMenit;
+                            else p.accAir_L += p.carrierFlow * deltaMenit;
+                            const totalFlow = p.o2 + p.carrierFlow;
+                            const pembagi = (p.gasType === 'Sevoflurane') ? 183 : 194;
+                            p.accGas_mL += (p.gasVol * totalFlow * 10 * deltaMenit) / pembagi;
+                        }
+                        p.lastTickTime = sekarang;
+                    }
+                });
+                saveDataToStorage();
+            } catch (e) {
+                createNewData();
+            }
+        } else {
+            createNewData();
+        }
+    }
+
+    function createNewData() {
+        patients = Array.from({ length: 5 }, (_, i) => ({
+            id: i + 1, nama: '', tanggal: today, o2: 0, carrierType: 'N2O', carrierFlow: 0, gasType: 'Sevoflurane', gasVol: 0,
+            stockSevo: 250, stockIso: 250, remainingSevo: 250, remainingIso: 250,
+            isRunning: false, lastTickTime: null, totalElapsedMs: 0, jamMulai: '-', jamSelesai: '-',
+            accO2_L: 0, accN2O_L: 0, accAir_L: 0, accGas_mL: 0, catatan: ''
+        }));
+        saveDataToStorage();
+    }
+
+    function saveDataToStorage() {
+        localStorage.setItem('anestesi_patients_data', JSON.stringify(patients));
+    }
 
     function initApp() {
+        loadSavedData();
         const container = document.getElementById('patient-containers');
         container.innerHTML = '';
 
         patients.forEach(p => {
             container.innerHTML += `
-                <div id="panel-${p.id}" class="patient-panel ${p.id === 1 ? 'active' : ''}">
-                    <div class="grid" style="margin-bottom: 15px;">
+                <div id="panel-${p.id}" class="patient-panel ${p.id === currentActiveTab ? 'active' : ''}">
+                    <div class="grid">
                         <div>
                             <label>Nama Pasien</label>
-                            <input type="text" id="nama-${p.id}" value="${p.nama}" oninput="updateData(${p.id}, 'nama', this.value)" placeholder="Masukkan nama pasien">
+                            <input type="text" id="nama-${p.id}" value="${p.nama}" oninput="updateData(${p.id}, 'nama', this.value)" placeholder="Nama pasien">
                         </div>
                         <div>
                             <label>Tanggal Tindakan</label>
                             <input type="date" id="tanggal-${p.id}" value="${p.tanggal}" oninput="updateData(${p.id}, 'tanggal', this.value)">
                         </div>
-                        <div class="full-width" style="margin-top: 5px;">
-                            <label>Jam Global (Real-Time)</label>
+                        <div class="full-width">
+                            <label>Jam Perangkat (Real-Time)</label>
                             <div class="clock-display" id="global-clock-${p.id}">00:00:00</div>
                             <div style="display: flex; justify-content: space-between; margin-top: 5px;">
                                 <span class="time-info">▶ Mulai: <strong id="lbl-mulai-${p.id}">${p.jamMulai}</strong></span>
@@ -265,337 +283,257 @@
 
                     <div class="grid">
                         <div>
-                            <label>Oksigen (O2) - L/Menit</label>
+                            <label>Oksigen (O2) - L/M</label>
                             <input type="number" step="0.1" id="o2-${p.id}" value="${p.o2}" oninput="updateData(${p.id}, 'o2', this.value)">
                         </div>
                         <div>
-                            <label>Gas Pendorong (Carrier)</label>
+                            <label>Gas Carrier</label>
                             <select id="carrierType-${p.id}" onchange="updateData(${p.id}, 'carrierType', this.value)">
-                                <option value="N2O">N2O</option>
-                                <option value="AIR">AIR (Udara)</option>
+                                <option value="N2O" ${p.carrierType==='N2O'?'selected':''}>N2O</option>
+                                <option value="AIR" ${p.carrierType==='AIR'?'selected':''}>AIR</option>
                             </select>
                         </div>
                         <div>
-                            <label>Flow Carrier - L/Menit</label>
+                            <label>Flow Carrier - L/M</label>
                             <input type="number" step="0.1" id="carrierFlow-${p.id}" value="${p.carrierFlow}" oninput="updateData(${p.id}, 'carrierFlow', this.value)">
                         </div>
                         <div>
                             <label>Agen Volatil</label>
                             <select id="gasType-${p.id}" onchange="updateData(${p.id}, 'gasType', this.value)">
-                                <option value="Sevoflurane">Sevoflurane (183)</option>
-                                <option value="Isoflurane">Isoflurane (194)</option>
+                                <option value="Sevoflurane" ${p.gasType==='Sevoflurane'?'selected':''}>Sevoflurane</option>
+                                <option value="Isoflurane" ${p.gasType==='Isoflurane'?'selected':''}>Isoflurane</option>
                             </select>
                         </div>
                         <div class="full-width">
-                            <label>Konsentrasi Gas (%) - Contoh: 1, 2</label>
+                            <label>Konsentrasi Gas (%)</label>
                             <input type="number" step="0.1" id="gasVol-${p.id}" value="${p.gasVol}" oninput="updateData(${p.id}, 'gasVol', this.value)">
                         </div>
                     </div>
 
                     <div class="stopwatch-controls">
-                        <button class="btn-start" id="btn-start-${p.id}" onclick="startTimer(${p.id})">START</button>
-                        <button class="btn-end" id="btn-end-${p.id}" onclick="stopTimer(${p.id})" disabled>END / PAUSE</button>
+                        <button class="btn-start" id="btn-start-${p.id}" onclick="startTimer(${p.id})" ${p.isRunning?'disabled':''}>START</button>
+                        <button class="btn-end" id="btn-end-${p.id}" onclick="stopTimer(${p.id})" ${!p.isRunning?'disabled':''}>END / PAUSE</button>
                         <button class="btn-reset" id="btn-reset-${p.id}" onclick="resetTimer(${p.id})">RESET</button>
                     </div>
 
                     <div class="result-box">
-                        <span id="status-${p.id}" class="status-badge stopped">OFF</span>
+                        <span id="status-${p.id}" class="status-badge ${p.isRunning?'running':'stopped'}">${p.isRunning?'RUNNING':'OFF'}</span>
                         <strong>Durasi Operasi: <span id="timer-display-${p.id}">00:00:00</span></strong>
                         <h4 style="margin-top: 10px; margin-bottom: 5px;">Akumulasi Pemakaian Gas:</h4>
                         <table style="width:100%; font-size: 14px;">
                             <tr><td>Oksigen (O2)</td><td>: <span id="accO2-${p.id}">0.00</span> Jam (<span id="accO2L-${p.id}">0</span> L)</td></tr>
                             <tr><td>N2O</td><td>: <span id="accN2O-${p.id}">0.00</span> Liter</td></tr>
-                            <tr><td>AIR (Udara)</td><td>: <span id="accAir-${p.id}">0.00</span> Liter</td></tr>
-                            <tr><td>Gas Anestesi (<span id="lblGas-${p.id}">Sevo</span>)</td><td>: <strong><span id="accGas-${p.id}">0.00</span> mL cairan</strong></td></tr>
+                            <tr><td>AIR</td><td>: <span id="accAir-${p.id}">0.00</span> Liter</td></tr>
+                            <tr><td>Gas Anestesi (<span id="lblGas-${p.id}">${p.gasType==='Sevoflurane'?'Sevo':'Iso'}</span>)</td><td>: <strong><span id="accGas-${p.id}">0.00</span> mL cairan</strong></td></tr>
                         </table>
                     </div>
 
-                    <label style="font-size: 15px; color: var(--primary); margin-bottom: 10px;">📦 Manajemen Stok Gas Pasien Ini (CC / mL)</label>
+                    <label style="font-size: 15px; color: var(--primary); margin-bottom: 10px;">📦 Manajemen Stok Gas Pasien (CC)</label>
                     <div class="grid" style="margin-bottom: 20px;">
                         <div class="patient-stock-box">
-                            <label for="input-stock-sevo-${p.id}">Stok Awal Sevoflurane (CC)</label>
-                            <input type="number" step="1" id="input-stock-sevo-${p.id}" value="${p.stockSevo}" oninput="updatePatientStockBaseline(${p.id}, 'Sevoflurane', this.value)">
+                            <label>Stok Awal Sevo</label>
+                            <input type="number" id="input-stock-sevo-${p.id}" value="${p.stockSevo}" oninput="updatePatientStockBaseline(${p.id}, 'Sevoflurane', this.value)">
                             <div class="stock-remaining">Sisa: <span id="display-stock-sevo-${p.id}">${p.remainingSevo.toFixed(1)}</span> CC</div>
-                            
-                            <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (CC):</label>
                             <div class="topup-group">
-                                <input type="number" step="1" id="flex-add-sevo-${p.id}" placeholder="Isi CC bebas...">
+                                <input type="number" id="flex-add-sevo-${p.id}" placeholder="+ CC">
                                 <button class="btn-topup-flex" onclick="topUpPatientStockFlexible(${p.id}, 'Sevoflurane')">+</button>
                             </div>
                         </div>
-                        
                         <div class="patient-stock-box">
-                            <label for="input-stock-iso-${p.id}">Stok Awal Isoflurane (CC)</label>
-                            <input type="number" step="1" id="input-stock-iso-${p.id}" value="${p.stockIso}" oninput="updatePatientStockBaseline(${p.id}, 'Isoflurane', this.value)">
+                            <label>Stok Awal Iso</label>
+                            <input type="number" id="input-stock-iso-${p.id}" value="${p.stockIso}" oninput="updatePatientStockBaseline(${p.id}, 'Isoflurane', this.value)">
                             <div class="stock-remaining">Sisa: <span id="display-stock-iso-${p.id}">${p.remainingIso.toFixed(1)}</span> CC</div>
-                            
-                            <label style="font-size: 11px; color: #666; margin-bottom: 2px;">Input Tambahan Cairan (CC):</label>
                             <div class="topup-group">
-                                <input type="number" step="1" id="flex-add-iso-${p.id}" placeholder="Isi CC bebas...">
+                                <input type="number" id="flex-add-iso-${p.id}" placeholder="+ CC">
                                 <button class="btn-topup-flex" onclick="topUpPatientStockFlexible(${p.id}, 'Isoflurane')">+</button>
                             </div>
                         </div>
                     </div>
 
-                    <div style="margin-top: 15px;">
+                    <div>
                         <label>Catatan Bebas</label>
-                        <textarea id="catatan-${p.id}" rows="3" oninput="updateData(${p.id}, 'catatan', this.value)" placeholder="Tambahkan text yang diinginkan...">${p.catatan}</textarea>
+                        <textarea id="catatan-${p.id}" rows="3" oninput="updateData(${p.id}, 'catatan', this.value)" placeholder="Text tambahan...">${p.catatan}</textarea>
                     </div>
 
                     <div class="action-group">
-                        <button class="btn-action" onclick="exportToCSV(${p.id})">Export ke CSV (.csv)</button>
+                        <button class="btn-action" onclick="exportToCSV(${p.id})">Export ke CSV</button>
                         <button class="btn-wa" onclick="shareToWhatsApp(${p.id})">Kirim ke WhatsApp</button>
                         <button class="btn-samsung" onclick="exportToSamsungNotes(${p.id})">Export ke Samsung Notes</button>
                     </div>
                 </div>
             `;
         });
+        renderDisplayOnly();
     }
 
     function switchPatient(id) {
         currentActiveTab = id;
-        document.querySelectorAll('.tab-btn').forEach((btn, index) => {
-            btn.classList.toggle('active', index === id - 1);
-        });
-        document.querySelectorAll('.patient-panel').forEach((panel, index) => {
-            panel.classList.toggle('active', index === id - 1);
-        });
+        document.querySelectorAll('.tab-btn').forEach((btn, idx) => btn.classList.toggle('active', idx === id - 1));
+        document.querySelectorAll('.patient-panel').forEach((pnl, idx) => pnl.classList.toggle('active', idx === id - 1));
         renderDisplayOnly();
     }
 
     function updateData(id, field, value) {
         const p = patients[id - 1];
-        if(field === 'o2' || field === 'carrierFlow' || field === 'gasVol') {
+        if(['o2', 'carrierFlow', 'gasVol'].includes(field)) {
+            if(p.isRunning) accumulateGasIncrementally(p);
             p[field] = parseFloat(value) || 0;
         } else {
             p[field] = value;
         }
         if (field === 'gasType') {
-            document.getElementById(`lblGas-${id}`).innerText = value === 'Sevoflurane' ? 'Sevo' : 'Iso';
+            const lbl = document.getElementById(`lblGas-${id}`);
+            if(lbl) lbl.innerText = value === 'Sevoflurane' ? 'Sevo' : 'Iso';
         }
+        saveDataToStorage();
     }
 
     function updatePatientStockBaseline(id, type, value) {
         const p = patients[id - 1];
-        if (type === 'Sevoflurane') {
-            p.stockSevo = parseFloat(value) || 0;
-        } else {
-            p.stockIso = parseFloat(value) || 0;
-        }
+        if (type === 'Sevoflurane') p.stockSevo = parseFloat(value) || 0;
+        else p.stockIso = parseFloat(value) || 0;
         recalculateStockOnly(p);
+        saveDataToStorage();
     }
 
     function topUpPatientStockFlexible(id, type) {
         const p = patients[id - 1];
-        const idSuffix = type === 'Sevoflurane' ? 'sevo' : 'iso';
-        const addInputField = document.getElementById(`flex-add-${idSuffix}-${id}`);
-        const baseInputField = document.getElementById(`input-stock-${idSuffix}-${id}`);
-        
-        let amountToAdd = parseFloat(addInputField.value) || 0;
-        
-        if (amountToAdd <= 0) {
-            alert("Silakan masukkan angka volume cairan (CC) yang valid.");
-            return;
-        }
-        
+        const suffix = type === 'Sevoflurane' ? 'sevo' : 'iso';
+        const addInpt = document.getElementById(`flex-add-${suffix}-${id}`);
+        const baseInpt = document.getElementById(`input-stock-${suffix}-${id}`);
+        let amt = parseFloat(addInpt.value) || 0;
+        if (amt <= 0) return;
+
         if (type === 'Sevoflurane') {
-            p.stockSevo += amountToAdd;
-            baseInputField.value = p.stockSevo.toFixed(0);
+            p.stockSevo += amt;
+            if(baseInpt) baseInpt.value = p.stockSevo.toFixed(0);
         } else {
-            p.stockIso += amountToAdd;
-            baseInputField.value = p.stockIso.toFixed(0);
+            p.stockIso += amt;
+            if(baseInpt) baseInpt.value = p.stockIso.toFixed(0);
         }
-        
-        addInputField.value = "";
+        addInpt.value = "";
         recalculateStockOnly(p);
+        saveDataToStorage();
     }
 
     function getFormattedGlobalTime() {
-        const now = new Date();
-        return now.toTimeString().split(' ')[0]; 
+        return new Date().toTimeString().split(' ')[0];
     }
 
     function startTimer(id) {
         const p = patients[id - 1];
         if (p.isRunning) return;
-        
         p.isRunning = true;
         p.lastTickTime = Date.now();
-        
         if (p.jamMulai === '-') {
             p.jamMulai = getFormattedGlobalTime();
             document.getElementById(`lbl-mulai-${id}`).innerText = p.jamMulai;
         }
-        
         document.getElementById(`btn-start-${id}`).disabled = true;
         document.getElementById(`btn-end-${id}`).disabled = false;
-        
-        const statusBadge = document.getElementById(`status-${id}`);
-        statusBadge.innerText = "RUNNING IN BACKGROUND";
-        statusBadge.className = "status-badge running";
+        const b = document.getElementById(`status-${id}`);
+        b.innerText = "RUNNING"; b.className = "status-badge running";
+        saveDataToStorage();
     }
 
     function stopTimer(id) {
         const p = patients[id - 1];
         if (!p.isRunning) return;
-        
-        // Lakukan satu kalkulasi terakhir tepat sebelum pause
         accumulateGasIncrementally(p);
-        
         p.isRunning = false;
         p.lastTickTime = null;
-        
         p.jamSelesai = getFormattedGlobalTime();
         document.getElementById(`lbl-selesai-${id}`).innerText = p.jamSelesai;
-
         document.getElementById(`btn-start-${id}`).disabled = false;
         document.getElementById(`btn-end-${id}`).disabled = true;
-
-        const statusBadge = document.getElementById(`status-${id}`);
-        statusBadge.innerText = "PAUSED";
-        statusBadge.className = "status-badge stopped";
+        const b = document.getElementById(`status-${id}`);
+        b.innerText = "PAUSED"; b.className = "status-badge stopped";
+        saveDataToStorage();
     }
 
     function resetTimer(id) {
         if (!confirm("Reset data pasien ini?")) return;
         const p = patients[id - 1];
-        p.isRunning = false;
-        p.lastTickTime = null;
-        p.totalElapsedMs = 0;
-        p.jamMulai = '-';
-        p.jamSelesai = '-';
-        p.accO2_L = 0;
-        p.accN2O_L = 0;
-        p.accAir_L = 0;
-        p.accGas_mL = 0;
+        p.isRunning = false; p.lastTickTime = null; p.totalElapsedMs = 0; p.jamMulai = '-'; p.jamSelesai = '-';
+        p.accO2_L = 0; p.accN2O_L = 0; p.accAir_L = 0; p.accGas_mL = 0;
 
         document.getElementById(`btn-start-${id}`).disabled = false;
         document.getElementById(`btn-end-${id}`).disabled = true;
-        
-        const statusBadge = document.getElementById(`status-${id}`);
-        statusBadge.innerText = "OFF";
-        statusBadge.className = "status-badge stopped";
-
+        const b = document.getElementById(`status-${id}`);
+        b.innerText = "OFF"; b.className = "status-badge stopped";
         document.getElementById(`timer-display-${id}`).innerText = "00:00:00";
         document.getElementById(`lbl-mulai-${id}`).innerText = "-";
         document.getElementById(`lbl-selesai-${id}`).innerText = "-";
-        document.getElementById(`accO2-${id}`).innerText = "0.00";
-        document.getElementById(`accO2L-${id}`).innerText = "0";
-        document.getElementById(`accN2O-${id}`).innerText = "0.00";
-        document.getElementById(`accAir-${id}`).innerText = "0.00";
-        document.getElementById(`accGas-${id}`).innerText = "0.00";
-
         recalculateStockOnly(p);
+        saveDataToStorage();
+        renderDisplayOnly();
     }
 
-    // LOGIKA INTI BARU: Menghitung penambahan gas per interval detik yang lewat
     function accumulateGasIncrementally(p) {
         if (!p.isRunning || !p.lastTickTime) return;
-
         const sekarang = Date.now();
         const deltaMs = sekarang - p.lastTickTime;
-        
         if (deltaMs > 0) {
             p.totalElapsedMs += deltaMs;
-            const deltaMenit = deltaMs / 60000; // Konversi mili detik ke menit untuk rumus dasar
-
-            // 1. Akumulasi Oksigen
+            const deltaMenit = deltaMs / 60000;
             p.accO2_L += p.o2 * deltaMenit;
-
-            // 2. Akumulasi Carrier Gas (N2O / AIR)
-            if (p.carrierType === 'N2O') {
-                p.accN2O_L += p.carrierFlow * deltaMenit;
-            } else {
-                p.accAir_L += p.carrierFlow * deltaMenit;
-            }
-
-            // 3. Akumulasi Gas Volatil Cairan (Sevo / Iso) sesuai parameter aktif saat detik ini berjalan
-            const totalFlowGasMedis = p.o2 + p.carrierFlow; 
+            if (p.carrierType === 'N2O') p.accN2O_L += p.carrierFlow * deltaMenit;
+            else p.accAir_L += p.carrierFlow * deltaMenit;
+            const totalFlow = p.o2 + p.carrierFlow;
             const pembagi = (p.gasType === 'Sevoflurane') ? 183 : 194;
-            const gasIncrement_mL = (p.gasVol * totalFlowGasMedis * 10 * deltaMenit) / pembagi;
-            
-            p.accGas_mL += gasIncrement_mL;
-
-            // Perbarui waktu cek terakhir ke detik saat ini
+            p.accGas_mL += (p.gasVol * totalFlow * 10 * deltaMenit) / pembagi;
             p.lastTickTime = sekarang;
         }
     }
 
     function recalculateStockOnly(p) {
-        let usedSevo_CC = 0;
-        let usedIso_CC = 0;
+        let usedSevo = (p.gasType === 'Sevoflurane') ? p.accGas_mL : 0;
+        let usedIso = (p.gasType === 'Isoflurane') ? p.accGas_mL : 0;
+        p.remainingSevo = p.stockSevo - usedSevo;
+        p.remainingIso = p.stockIso - usedIso;
 
-        if (p.gasType === 'Sevoflurane') {
-            usedSevo_CC = p.accGas_mL;
-        } else if (p.gasType === 'Isoflurane') {
-            usedIso_CC = p.accGas_mL;
-        }
-
-        p.remainingSevo = p.stockSevo - usedSevo_CC;
-        p.remainingIso = p.stockIso - usedIso_CC;
-
-        // Tampilkan ke layar jika sedang aktif di tab ini
         if (p.id === currentActiveTab) {
-            const elSevo = document.getElementById(`display-stock-sevo-${p.id}`);
-            const elIso = document.getElementById(`display-stock-iso-${p.id}`);
-            if (elSevo && elIso) {
-                elSevo.innerText = p.remainingSevo.toFixed(1);
-                elIso.innerText = p.remainingIso.toFixed(1);
-                elSevo.style.color = p.remainingSevo < 10 ? 'var(--danger)' : 'var(--primary)';
-                elIso.style.color = p.remainingIso < 10 ? 'var(--danger)' : 'var(--primary)';
-            }
+            const s = document.getElementById(`display-stock-sevo-${p.id}`);
+            const i = document.getElementById(`display-stock-iso-${p.id}`);
+            if (s && i) { s.innerText = p.remainingSevo.toFixed(1); i.innerText = p.remainingIso.toFixed(1); }
         }
     }
 
-    // Fungsi loop background yang dieksekusi setiap 1 detik
     function coreAppLoop() {
-        const jamSekarangString = getFormattedGlobalTime();
-
+        const nowStr = getFormattedGlobalTime();
+        let shouldSave = false;
         patients.forEach(p => {
-            // Jalankan hitungan akumulasi berantai jika status pasien aktif (START)
-            if (p.isRunning) {
-                accumulateGasIncrementally(p);
-            }
-            
-            // Hitung sisa stok gas pasien berdasarkan penambahan terbaru
+            if (p.isRunning) { accumulateGasIncrementally(p); shouldSave = true; }
             recalculateStockOnly(p);
         });
-
-        // Tampilkan pembaruan angka ke user interface khusus untuk Tab Pasien yang sedang dibuka
-        renderDisplayOnly(jamSekarangString);
+        if(shouldSave) saveDataToStorage(); // Menjaga sinkronisasi waktu berkala ke memori fisik
+        renderDisplayOnly(nowStr);
     }
 
-    function renderDisplayOnly(jamSekarangString = null) {
+    function renderDisplayOnly(nowStr = null) {
         const p = patients[currentActiveTab - 1];
-        
-        const elClock = document.getElementById(`global-clock-${p.id}`);
-        if (elClock && jamSekarangString) {
-            elClock.innerText = jamSekarangString;
-        }
+        const clk = document.getElementById(`global-clock-${p.id}`);
+        if (clk && nowStr) clk.innerText = nowStr;
 
         const totalDetik = Math.floor(p.totalElapsedMs / 1000);
-        const totalJam = (p.totalElapsedMs / 3600000).toFixed(2);
-
         const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
         const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
         const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
         
-        const elTimer = document.getElementById(`timer-display-${p.id}`);
-        if (elTimer) {
-            elTimer.innerText = `${hrs}:${mins}:${secs}`;
-        }
+        const tmr = document.getElementById(`timer-display-${p.id}`);
+        if (tmr) tmr.innerText = `${hrs}:${mins}:${secs}`;
 
-        const elAccO2 = document.getElementById(`accO2-${p.id}`);
-        const elAccO2L = document.getElementById(`accO2L-${p.id}`);
-        const elAccN2O = document.getElementById(`accN2O-${p.id}`);
-        const elAccAir = document.getElementById(`accAir-${p.id}`);
-        const elAccGas = document.getElementById(`accGas-${p.id}`);
+        const o2H = document.getElementById(`accO2-${p.id}`);
+        const o2L = document.getElementById(`accO2L-${p.id}`);
+        const n2o = document.getElementById(`accN2O-${p.id}`);
+        const air = document.getElementById(`accAir-${p.id}`);
+        const gas = document.getElementById(`accGas-${p.id}`);
 
-        if (elAccO2) elAccO2.innerText = totalJam;
-        if (elAccO2L) elAccO2L.innerText = Math.floor(p.accO2_L);
-        if (elAccN2O) elAccN2O.innerText = p.accN2O_L.toFixed(1);
-        if (elAccAir) elAccAir.innerText = p.accAir_L.toFixed(1);
-        if (elAccGas) elAccGas.innerText = p.accGas_mL.toFixed(2);
+        if (o2H) o2H.innerText = (p.totalElapsedMs / 3600000).toFixed(2);
+        if (o2L) o2L.innerText = Math.floor(p.accO2_L);
+        if (n2o) n2o.innerText = p.accN2O_L.toFixed(1);
+        if (air) air.innerText = p.accAir_L.toFixed(1);
+        if (gas) gas.innerText = p.accGas_mL.toFixed(2);
     }
 
     function generateSummaryText(p) {
@@ -603,23 +541,7 @@
         const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
         const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
         const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
-        const durasi = `${hrs}:${mins}:${secs}`;
-        const totalJam = (p.totalElapsedMs / 3600000).toFixed(2);
-
-        return `TANGGAL TINDAKAN: ${p.tanggal}\n` +
-               `WAKTU OPERASI: ${p.jamMulai} s/d ${p.jamSelesai}\n` +
-               `NAMA PASIEN: ${p.nama || '-'}\n\n` +
-               `====== PEMAKAIAN GAS ======\n` +
-               `• O2: ${totalJam} Jam (${Math.floor(p.accO2_L)} L)\n` +
-               `• N2O: ${p.accN2O_L.toFixed(1)} Liter\n` +
-               `• AIR: ${p.accAir_L.toFixed(1)} Liter\n` +
-               `• ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan\n` +
-               `• Durasi Operasi: ${durasi}\n\n` +
-               `====== SISA STOK PASIEN ======\n` +
-               `• Sisa Sevoflurane: ${p.remainingSevo.toFixed(1)} CC\n` +
-               `• Sisa Isoflurane: ${p.remainingIso.toFixed(1)} CC\n\n` +
-               `====== CATATAN ======\n` +
-               `${p.catatan || '-'}`;
+        return `TANGGAL: ${p.tanggal}\nWAKTU: ${p.jamMulai} s/d ${p.jamSelesai}\nPASIEN: ${p.nama || '-'}\n\n====== GAS UNTUK WA ======\n• O2: ${(p.totalElapsedMs / 3600000).toFixed(2)} Jam (${Math.floor(p.accO2_L)} L)\n• N2O: ${p.accN2O_L.toFixed(1)} L\n• AIR: ${p.accAir_L.toFixed(1)} L\n• ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan\n• Durasi: ${hrs}:${mins}:${secs}\n\n====== SISA STOK ======\n• Sevo: ${p.remainingSevo.toFixed(1)} CC\n• Iso: ${p.remainingIso.toFixed(1)} CC\n\n====== CATATAN ======\n${p.catatan || '-'}`;
     }
 
     function exportToCSV(id) {
@@ -628,56 +550,33 @@
         const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
         const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
         const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
-
-        let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "Parameter,Nilai\n";
-        csvContent += `Tanggal Tindakan,${p.tanggal}\n`;
-        csvContent += `Jam Mulai,${p.jamMulai}\n`;
-        csvContent += `Jam Selesai,${p.jamSelesai}\n`;
-        csvContent += `Nama Pasien,${p.nama || '-'}\n`;
-        csvContent += `Durasi Operasi,${hrs}:${mins}:${secs}\n`;
-        csvContent += `Akumulasi O2 (Jam),${(p.totalElapsedMs / 3600000).toFixed(2)}\n`;
-        csvContent += `Akumulasi O2 (Liter),${Math.floor(p.accO2_L)}\n`;
-        csvContent += `Akumulasi N2O (Liter),${p.accN2O_L.toFixed(1)}\n`;
-        csvContent += `Akumulasi AIR (Liter),${p.accAir_L.toFixed(1)}\n`;
-        csvContent += `Cairan ${p.gasType} (mL),${p.accGas_mL.toFixed(2)}\n`;
-        csvContent += `Sisa Stok Sevoflurane Pasien (CC),${p.remainingSevo.toFixed(1)}\n`;
-        csvContent += `Sisa Stok Isoflurane Pasien (CC),${p.remainingIso.toFixed(1)}\n`;
-        csvContent += `Catatan,"${p.catatan || '-'}"\n`;
-
-        const encodedUri = encodeURI(csvContent);
+        let csv = "data:text/csv;charset=utf-8,Parameter,Nilai\n";
+        csv += `Tanggal,${p.tanggal}\nMulai,${p.jamMulai}\nSelesai,${p.jamSelesai}\nNama,${p.nama || '-'}\nDurasi,${hrs}:${mins}:${secs}\nO2 (Jam),${(p.totalElapsedMs / 3600000).toFixed(2)}\nO2 (L),${Math.floor(p.accO2_L)}\nN2O (L),${p.accN2O_L.toFixed(1)}\nAIR (L),${p.accAir_L.toFixed(1)}\nCairan (mL),${p.accGas_mL.toFixed(2)}\nSisa Sevo,${p.remainingSevo.toFixed(1)}\nSisa Iso,${p.remainingIso.toFixed(1)}\n`;
+        const encodedUri = encodeURI(csv);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Summary_Anestesi_${p.nama || 'Pasien_'+id}_${p.tanggal}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        link.setAttribute("download", `Summary_${p.nama || 'Pasien'}.csv`);
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
     }
 
     function shareToWhatsApp(id) {
-        const p = patients[id - 1];
-        const text = generateSummaryText(p);
-        const url = "https://api.whatsapp.com/send?text=" + encodeURIComponent(text);
-        window.open(url, '_blank');
+        window.open("https://api.whatsapp.com/send?text=" + encodeURIComponent(generateSummaryText(patients[id - 1])), '_blank');
     }
 
     function exportToSamsungNotes(id) {
-        const p = patients[id - 1];
-        const textToCopy = generateSummaryText(p);
-
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            alert("Rangkuman data Pasien " + id + " berhasil DI-COPY!\n\nSetelah ini Samsung Notes akan otomatis terbuka, Anda tinggal menekan tahan layar lalu pilih 'TEMPEL / PASTE'.");
+        navigator.clipboard.writeText(generateSummaryText(patients[id - 1])).then(() => {
+            alert("Berhasil di Copy! Silakan Tempel di Samsung Notes.");
             window.location.href = "intent://#Intent;scheme=samsungnotes;package=com.samsung.android.app.notes;end";
-        }).catch(err => {
-            alert("Gagal menyalin data otomatis. Silakan salin manual.");
-            console.error('Gagal menyalin teks: ', err);
         });
     }
 
     initApp();
-    // Menjalankan core loop sistem per detik secara real-time
     setInterval(coreAppLoop, 1000);
-</script>
 
+    // KETIKA APLIKASI DIBANGUNKAN KEMBALI SETELAH MATI DI BACKGROUND
+    document.addEventListener("resume", function() {
+        loadSavedData();
+    }, false);
+</script>
 </body>
 </html>
