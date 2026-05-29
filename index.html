@@ -210,11 +210,10 @@
         if (localData) {
             try {
                 patients = JSON.parse(localData);
-                // Pastikan lastTickTime diperbarui jika aplikasi mati saat keadaan RUNNING
+                // Sinkronisasi otomatis mengejar ketertinggalan waktu jika aplikasi mati saat keadaan RUNNING
                 const sekarang = Date.now();
                 patients.forEach(p => {
                     if (p.isRunning && p.lastTickTime) {
-                        // Jalankan hitungan otomatis mengejar durasi mati tadi
                         const deltaMs = sekarang - p.lastTickTime;
                         if (deltaMs > 0) {
                             const deltaMenit = deltaMs / 60000;
@@ -506,7 +505,7 @@
             if (p.isRunning) { accumulateGasIncrementally(p); shouldSave = true; }
             recalculateStockOnly(p);
         });
-        if(shouldSave) saveDataToStorage(); // Menjaga sinkronisasi waktu berkala ke memori fisik
+        if(shouldSave) saveDataToStorage(); 
         renderDisplayOnly(nowStr);
     }
 
@@ -573,7 +572,7 @@
     initApp();
     setInterval(coreAppLoop, 1000);
 
-    // KETIKA APLIKASI DIBANGUNKAN KEMBALI SETELAH MATI DI BACKGROUND
+    // Memicu sinkronisasi data kembali saat aplikasi dibuka dari background
     document.addEventListener("resume", function() {
         loadSavedData();
     }, false);
