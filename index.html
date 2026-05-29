@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Anestesi v5.2 - Stok Satuan CC</title>
+    <title>Kalkulator Anestesi v5.3 - Real-Time Accumulation</title>
     <style>
         :root {
             --primary: #2c3e50;
@@ -202,7 +202,7 @@
 <script>
     const today = new Date().toISOString().split('T')[0];
 
-    // Mengubah nilai baseline bawaan dari 0.25 L menjadi 250 CC
+    // Menggunakan basis data ter-update per detik untuk akumulasi riil
     const patients = Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
         nama: '',
@@ -219,8 +219,8 @@
         remainingIso: 250,
         
         isRunning: false,
-        startTime: null,
-        elapsedTimeBefore: 0, 
+        lastTickTime: null, // Melacak waktu update terakhir untuk presisi mili detik
+        totalElapsedMs: 0,  // Menyimpan durasi berjalan kumulatif asli
         
         jamMulai: '-',
         jamSelesai: '-',
@@ -360,6 +360,7 @@
         document.querySelectorAll('.patient-panel').forEach((panel, index) => {
             panel.classList.toggle('active', index === id - 1);
         });
+        renderDisplayOnly();
     }
 
     function updateData(id, field, value) {
@@ -381,7 +382,7 @@
         } else {
             p.stockIso = parseFloat(value) || 0;
         }
-        updateCalculations();
+        recalculateStockOnly(p);
     }
 
     function topUpPatientStockFlexible(id, type) {
@@ -406,7 +407,7 @@
         }
         
         addInputField.value = "";
-        updateCalculations();
+        recalculateStockOnly(p);
     }
 
     function getFormattedGlobalTime() {
@@ -419,7 +420,7 @@
         if (p.isRunning) return;
         
         p.isRunning = true;
-        p.startTime = Date.now();
+        p.lastTickTime = Date.now();
         
         if (p.jamMulai === '-') {
             p.jamMulai = getFormattedGlobalTime();
@@ -438,9 +439,11 @@
         const p = patients[id - 1];
         if (!p.isRunning) return;
         
+        // Lakukan satu kalkulasi terakhir tepat sebelum pause
+        accumulateGasIncrementally(p);
+        
         p.isRunning = false;
-        p.elapsedTimeBefore += Date.now() - p.startTime;
-        p.startTime = null;
+        p.lastTickTime = null;
         
         p.jamSelesai = getFormattedGlobalTime();
         document.getElementById(`lbl-selesai-${id}`).innerText = p.jamSelesai;
@@ -457,8 +460,8 @@
         if (!confirm("Reset data pasien ini?")) return;
         const p = patients[id - 1];
         p.isRunning = false;
-        p.startTime = null;
-        p.elapsedTimeBefore = 0;
+        p.lastTickTime = null;
+        p.totalElapsedMs = 0;
         p.jamMulai = '-';
         p.jamSelesai = '-';
         p.accO2_L = 0;
@@ -482,95 +485,126 @@
         document.getElementById(`accAir-${id}`).innerText = "0.00";
         document.getElementById(`accGas-${id}`).innerText = "0.00";
 
-        updateCalculations();
+        recalculateStockOnly(p);
     }
 
-    function updateCalculations() {
+    // LOGIKA INTI BARU: Menghitung penambahan gas per interval detik yang lewat
+    function accumulateGasIncrementally(p) {
+        if (!p.isRunning || !p.lastTickTime) return;
+
         const sekarang = Date.now();
-        const jamSekarangString = getFormattedGlobalTime();
+        const deltaMs = sekarang - p.lastTickTime;
+        
+        if (deltaMs > 0) {
+            p.totalElapsedMs += deltaMs;
+            const deltaMenit = deltaMs / 60000; // Konversi mili detik ke menit untuk rumus dasar
 
-        patients.forEach(p => {
-            const elClock = document.getElementById(`global-clock-${p.id}`);
-            if (elClock && p.id === currentActiveTab) {
-                elClock.innerText = jamSekarangString;
+            // 1. Akumulasi Oksigen
+            p.accO2_L += p.o2 * deltaMenit;
+
+            // 2. Akumulasi Carrier Gas (N2O / AIR)
+            if (p.carrierType === 'N2O') {
+                p.accN2O_L += p.carrierFlow * deltaMenit;
+            } else {
+                p.accAir_L += p.carrierFlow * deltaMenit;
             }
 
-            let totalMilidetik = p.elapsedTimeBefore;
-            if (p.isRunning) {
-                totalMilidetik += (sekarang - p.startTime);
-            }
+            // 3. Akumulasi Gas Volatil Cairan (Sevo / Iso) sesuai parameter aktif saat detik ini berjalan
+            const totalFlowGasMedis = p.o2 + p.carrierFlow; 
+            const pembagi = (p.gasType === 'Sevoflurane') ? 183 : 194;
+            const gasIncrement_mL = (p.gasVol * totalFlowGasMedis * 10 * deltaMenit) / pembagi;
+            
+            p.accGas_mL += gasIncrement_mL;
 
-            if (totalMilidetik > 0) {
-                const totalDetik = Math.floor(totalMilidetik / 1000);
-                const totalMenit = totalMilidetik / 60000;
-                const totalJam = totalMilidetik / 3600000;
+            // Perbarui waktu cek terakhir ke detik saat ini
+            p.lastTickTime = sekarang;
+        }
+    }
 
-                const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
-                const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
-                const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
-                
-                if (p.id === currentActiveTab) {
-                    document.getElementById(`timer-display-${p.id}`).innerText = `${hrs}:${mins}:${secs}`;
-                }
+    function recalculateStockOnly(p) {
+        let usedSevo_CC = 0;
+        let usedIso_CC = 0;
 
-                p.accO2_L = p.o2 * totalMenit;
-                if (p.carrierType === 'N2O') {
-                    p.accN2O_L = p.carrierFlow * totalMenit;
-                    p.accAir_L = 0;
-                } else {
-                    p.accAir_L = p.carrierFlow * totalMenit;
-                    p.accN2O_L = 0;
-                }
+        if (p.gasType === 'Sevoflurane') {
+            usedSevo_CC = p.accGas_mL;
+        } else if (p.gasType === 'Isoflurane') {
+            usedIso_CC = p.accGas_mL;
+        }
 
-                const totalFlowGasMedis = p.o2 + p.carrierFlow; 
-                const pembagi = (p.gasType === 'Sevoflurane') ? 183 : 194;
-                p.accGas_mL = (p.gasVol * totalFlowGasMedis * 10 * totalMenit) / pembagi;
+        p.remainingSevo = p.stockSevo - usedSevo_CC;
+        p.remainingIso = p.stockIso - usedIso_CC;
 
-                if (p.id === currentActiveTab) {
-                    document.getElementById(`accO2-${p.id}`).innerText = totalJam.toFixed(2);
-                    document.getElementById(`accO2L-${p.id}`).innerText = Math.floor(p.accO2_L);
-                    document.getElementById(`accN2O-${p.id}`).innerText = p.accN2O_L.toFixed(1);
-                    document.getElementById(`accAir-${p.id}`).innerText = p.accAir_L.toFixed(1);
-                    document.getElementById(`accGas-${p.id}`).innerText = p.accGas_mL.toFixed(2);
-                }
-            }
-
-            let usedSevo_CC = 0;
-            let usedIso_CC = 0;
-
-            // PERBAIKAN: Karena accGas_mL sudah bersatuan mL (setara CC), tidak perlu dibagi 1000 lagi
-            if (p.gasType === 'Sevoflurane') {
-                usedSevo_CC = p.accGas_mL;
-            } else if (p.gasType === 'Isoflurane') {
-                usedIso_CC = p.accGas_mL;
-            }
-
-            p.remainingSevo = p.stockSevo - usedSevo_CC;
-            p.remainingIso = p.stockIso - usedIso_CC;
-
+        // Tampilkan ke layar jika sedang aktif di tab ini
+        if (p.id === currentActiveTab) {
             const elSevo = document.getElementById(`display-stock-sevo-${p.id}`);
             const elIso = document.getElementById(`display-stock-iso-${p.id}`);
-            
             if (elSevo && elIso) {
                 elSevo.innerText = p.remainingSevo.toFixed(1);
                 elIso.innerText = p.remainingIso.toFixed(1);
-
-                // Ambang batas indikator bahaya diturunkan menjadi jika sisa di bawah 10 CC
                 elSevo.style.color = p.remainingSevo < 10 ? 'var(--danger)' : 'var(--primary)';
                 elIso.style.color = p.remainingIso < 10 ? 'var(--danger)' : 'var(--primary)';
             }
+        }
+    }
+
+    // Fungsi loop background yang dieksekusi setiap 1 detik
+    function coreAppLoop() {
+        const jamSekarangString = getFormattedGlobalTime();
+
+        patients.forEach(p => {
+            // Jalankan hitungan akumulasi berantai jika status pasien aktif (START)
+            if (p.isRunning) {
+                accumulateGasIncrementally(p);
+            }
+            
+            // Hitung sisa stok gas pasien berdasarkan penambahan terbaru
+            recalculateStockOnly(p);
         });
+
+        // Tampilkan pembaruan angka ke user interface khusus untuk Tab Pasien yang sedang dibuka
+        renderDisplayOnly(jamSekarangString);
+    }
+
+    function renderDisplayOnly(jamSekarangString = null) {
+        const p = patients[currentActiveTab - 1];
+        
+        const elClock = document.getElementById(`global-clock-${p.id}`);
+        if (elClock && jamSekarangString) {
+            elClock.innerText = jamSekarangString;
+        }
+
+        const totalDetik = Math.floor(p.totalElapsedMs / 1000);
+        const totalJam = (p.totalElapsedMs / 3600000).toFixed(2);
+
+        const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
+        const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
+        const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
+        
+        const elTimer = document.getElementById(`timer-display-${p.id}`);
+        if (elTimer) {
+            elTimer.innerText = `${hrs}:${mins}:${secs}`;
+        }
+
+        const elAccO2 = document.getElementById(`accO2-${p.id}`);
+        const elAccO2L = document.getElementById(`accO2L-${p.id}`);
+        const elAccN2O = document.getElementById(`accN2O-${p.id}`);
+        const elAccAir = document.getElementById(`accAir-${p.id}`);
+        const elAccGas = document.getElementById(`accGas-${p.id}`);
+
+        if (elAccO2) elAccO2.innerText = totalJam;
+        if (elAccO2L) elAccO2L.innerText = Math.floor(p.accO2_L);
+        if (elAccN2O) elAccN2O.innerText = p.accN2O_L.toFixed(1);
+        if (elAccAir) elAccAir.innerText = p.accAir_L.toFixed(1);
+        if (elAccGas) elAccGas.innerText = p.accGas_mL.toFixed(2);
     }
 
     function generateSummaryText(p) {
-        let totalMilidetik = p.elapsedTimeBefore;
-        if (p.isRunning) totalMilidetik += (Date.now() - p.startTime);
-        const totalDetik = Math.floor(totalMilidetik / 1000);
+        const totalDetik = Math.floor(p.totalElapsedMs / 1000);
         const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
         const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
         const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
         const durasi = `${hrs}:${mins}:${secs}`;
-        const totalJam = (totalMilidetik / 3600000).toFixed(2);
+        const totalJam = (p.totalElapsedMs / 3600000).toFixed(2);
 
         return `TANGGAL TINDAKAN: ${p.tanggal}\n` +
                `WAKTU OPERASI: ${p.jamMulai} s/d ${p.jamSelesai}\n` +
@@ -579,7 +613,7 @@
                `• O2: ${totalJam} Jam (${Math.floor(p.accO2_L)} L)\n` +
                `• N2O: ${p.accN2O_L.toFixed(1)} Liter\n` +
                `• AIR: ${p.accAir_L.toFixed(1)} Liter\n` +
-               `• ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan (${p.gasVol}%)\n` +
+               `• ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan\n` +
                `• Durasi Operasi: ${durasi}\n\n` +
                `====== SISA STOK PASIEN ======\n` +
                `• Sisa Sevoflurane: ${p.remainingSevo.toFixed(1)} CC\n` +
@@ -590,9 +624,7 @@
 
     function exportToCSV(id) {
         const p = patients[id - 1];
-        let totalMilidetik = p.elapsedTimeBefore;
-        if (p.isRunning) totalMilidetik += (Date.now() - p.startTime);
-        const totalDetik = Math.floor(totalMilidetik / 1000);
+        const totalDetik = Math.floor(p.totalElapsedMs / 1000);
         const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
         const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
         const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
@@ -604,7 +636,7 @@
         csvContent += `Jam Selesai,${p.jamSelesai}\n`;
         csvContent += `Nama Pasien,${p.nama || '-'}\n`;
         csvContent += `Durasi Operasi,${hrs}:${mins}:${secs}\n`;
-        csvContent += `Akumulasi O2 (Jam),${(totalMilidetik / 3600000).toFixed(2)}\n`;
+        csvContent += `Akumulasi O2 (Jam),${(p.totalElapsedMs / 3600000).toFixed(2)}\n`;
         csvContent += `Akumulasi O2 (Liter),${Math.floor(p.accO2_L)}\n`;
         csvContent += `Akumulasi N2O (Liter),${p.accN2O_L.toFixed(1)}\n`;
         csvContent += `Akumulasi AIR (Liter),${p.accAir_L.toFixed(1)}\n`;
@@ -643,7 +675,8 @@
     }
 
     initApp();
-    setInterval(updateCalculations, 1000);
+    // Menjalankan core loop sistem per detik secara real-time
+    setInterval(coreAppLoop, 1000);
 </script>
 
 </body>
