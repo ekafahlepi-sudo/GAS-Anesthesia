@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Anestesi v5.5 - Anti-Data Loss</title>
+    <title>Kalkulator Anestesi v5.6 - Multi-Room</title>
     <style>
         :root {
             --primary: #2c3e50;
@@ -31,17 +31,20 @@
             overflow-x: auto;
             margin-bottom: 15px;
             border-bottom: 2px solid #ddd;
+            gap: 2px;
         }
         .tab-btn {
-            padding: 10px 20px;
+            padding: 10px 15px;
             border: none;
             background: #e0e0e0;
             cursor: pointer;
             font-weight: bold;
             border-top-left-radius: 5px;
             border-top-right-radius: 5px;
-            margin-right: 2px;
             white-space: nowrap;
+            flex: 1;
+            min-width: 80px;
+            text-align: center;
         }
         .tab-btn.active {
             background: var(--primary);
@@ -195,7 +198,7 @@
         <button class="tab-btn" id="tab-btn-3" onclick="switchPatient(3)">Siak 3</button>
         <button class="tab-btn" id="tab-btn-4" onclick="switchPatient(4)">Kampar 1</button>
         <button class="tab-btn" id="tab-btn-5" onclick="switchPatient(5)">Kampar 2</button>
-        <button class="tab-btn" id="tab-btn-5" onclick="switchPatient(5)">Rokan</button>
+        <button class="tab-btn" id="tab-btn-6" onclick="switchPatient(6)">Rokan</button>
     </div>
 
     <div id="patient-containers"></div>
@@ -204,14 +207,36 @@
     const today = new Date().toISOString().split('T')[0];
     let currentActiveTab = 1;
     let patients = [];
+    
+    // Mapping nama kamar berdasarkan ID array
+    const roomNames = {
+        1: "Siak 1",
+        2: "Siak 2",
+        3: "Siak 3",
+        4: "Kampar 1",
+        5: "Kampar 2",
+        6: "Rokan"
+    };
 
-    // FUNGSI UTAMA: Memuat data dari memori permanen HP jika ada
     function loadSavedData() {
         const localData = localStorage.getItem('anestesi_patients_data');
         if (localData) {
             try {
                 patients = JSON.parse(localData);
-                // Sinkronisasi otomatis mengejar ketertinggalan waktu jika aplikasi mati saat keadaan RUNNING
+                
+                // Jaga-jaga jika data lama di penyimpanan HP masih isi 5, otomatis upgrade ke 6 kamar
+                if (patients.length < 6) {
+                    for (let i = patients.length; i < 6; i++) {
+                        patients.push({
+                            id: i + 1, nama: '', tanggal: today, o2: 0, carrierType: 'N2O', carrierFlow: 0, gasType: 'Sevoflurane', gasVol: 0,
+                            stockSevo: 250, stockIso: 250, remainingSevo: 250, remainingIso: 250,
+                            isRunning: false, lastTickTime: null, totalElapsedMs: 0, jamMulai: '-', jamSelesai: '-',
+                            accO2_L: 0, accN2O_L: 0, accAir_L: 0, accGas_mL: 0, catatan: ''
+                        });
+                    }
+                    saveDataToStorage();
+                }
+
                 const sekarang = Date.now();
                 patients.forEach(p => {
                     if (p.isRunning && p.lastTickTime) {
@@ -239,7 +264,8 @@
     }
 
     function createNewData() {
-        patients = Array.from({ length: 5 }, (_, i) => ({
+        // Membuat data dasar untuk 6 kamar otomatis
+        patients = Array.from({ length: 6 }, (_, i) => ({
             id: i + 1, nama: '', tanggal: today, o2: 0, carrierType: 'N2O', carrierFlow: 0, gasType: 'Sevoflurane', gasVol: 0,
             stockSevo: 250, stockIso: 250, remainingSevo: 250, remainingIso: 250,
             isRunning: false, lastTickTime: null, totalElapsedMs: 0, jamMulai: '-', jamSelesai: '-',
@@ -252,12 +278,14 @@
         localStorage.setItem('anestesi_patients_data', JSON.stringify(patients));
     }
 
+    // Mengubah judul section stok agar mencerminkan nama kamar aslinya
     function initApp() {
         loadSavedData();
         const container = document.getElementById('patient-containers');
         container.innerHTML = '';
 
         patients.forEach(p => {
+            const namaKamar = roomNames[p.id] || `Kamar ${p.id}`;
             container.innerHTML += `
                 <div id="panel-${p.id}" class="patient-panel ${p.id === currentActiveTab ? 'active' : ''}">
                     <div class="grid">
@@ -270,7 +298,7 @@
                             <input type="date" id="tanggal-${p.id}" value="${p.tanggal}" oninput="updateData(${p.id}, 'tanggal', this.value)">
                         </div>
                         <div class="full-width">
-                            <label>Jam Perangkat (Real-Time)</label>
+                            <label>Jam Perangkat (Real-Time) - ${namaKamar}</label>
                             <div class="clock-display" id="global-clock-${p.id}">00:00:00</div>
                             <div style="display: flex; justify-content: space-between; margin-top: 5px;">
                                 <span class="time-info">▶ Mulai: <strong id="lbl-mulai-${p.id}">${p.jamMulai}</strong></span>
@@ -328,7 +356,7 @@
                         </table>
                     </div>
 
-                    <label style="font-size: 15px; color: var(--primary); margin-bottom: 10px;">📦 Manajemen Stok Gas Pasien (CC)</label>
+                    <label style="font-size: 15px; color: var(--primary); margin-bottom: 10px;">📦 Manajemen Stok Gas - ${namaKamar} (CC)</label>
                     <div class="grid" style="margin-bottom: 20px;">
                         <div class="patient-stock-box">
                             <label>Stok Awal Sevo</label>
@@ -375,6 +403,7 @@
 
     function updateData(id, field, value) {
         const p = patients[id - 1];
+        if(!p) return;
         if(['o2', 'carrierFlow', 'gasVol'].includes(field)) {
             if(p.isRunning) accumulateGasIncrementally(p);
             p[field] = parseFloat(value) || 0;
@@ -390,6 +419,7 @@
 
     function updatePatientStockBaseline(id, type, value) {
         const p = patients[id - 1];
+        if(!p) return;
         if (type === 'Sevoflurane') p.stockSevo = parseFloat(value) || 0;
         else p.stockIso = parseFloat(value) || 0;
         recalculateStockOnly(p);
@@ -398,6 +428,7 @@
 
     function topUpPatientStockFlexible(id, type) {
         const p = patients[id - 1];
+        if(!p) return;
         const suffix = type === 'Sevoflurane' ? 'sevo' : 'iso';
         const addInpt = document.getElementById(`flex-add-${suffix}-${id}`);
         const baseInpt = document.getElementById(`input-stock-${suffix}-${id}`);
@@ -422,7 +453,7 @@
 
     function startTimer(id) {
         const p = patients[id - 1];
-        if (p.isRunning) return;
+        if (!p || p.isRunning) return;
         p.isRunning = true;
         p.lastTickTime = Date.now();
         if (p.jamMulai === '-') {
@@ -438,7 +469,7 @@
 
     function stopTimer(id) {
         const p = patients[id - 1];
-        if (!p.isRunning) return;
+        if (!p || !p.isRunning) return;
         accumulateGasIncrementally(p);
         p.isRunning = false;
         p.lastTickTime = null;
@@ -452,8 +483,9 @@
     }
 
     function resetTimer(id) {
-        if (!confirm("Reset data pasien ini?")) return;
+        if (!confirm("Reset data kamar ini?")) return;
         const p = patients[id - 1];
+        if(!p) return;
         p.isRunning = false; p.lastTickTime = null; p.totalElapsedMs = 0; p.jamMulai = '-'; p.jamSelesai = '-';
         p.accO2_L = 0; p.accN2O_L = 0; p.accAir_L = 0; p.accGas_mL = 0;
 
@@ -512,6 +544,7 @@
 
     function renderDisplayOnly(nowStr = null) {
         const p = patients[currentActiveTab - 1];
+        if(!p) return;
         const clk = document.getElementById(`global-clock-${p.id}`);
         if (clk && nowStr) clk.innerText = nowStr;
 
@@ -541,29 +574,36 @@
         const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
         const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
         const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
-        return `TANGGAL: ${p.tanggal}\nWAKTU: ${p.jamMulai} s/d ${p.jamSelesai}\nPASIEN: ${p.nama || '-'}\n\n====== GAS UNTUK WA ======\n• O2: ${(p.totalElapsedMs / 3600000).toFixed(2)} Jam (${Math.floor(p.accO2_L)} L)\n• N2O: ${p.accN2O_L.toFixed(1)} L\n• AIR: ${p.accAir_L.toFixed(1)} L\n• ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan\n• Durasi: ${hrs}:${mins}:${secs}\n\n====== SISA STOK ======\n• Sevo: ${p.remainingSevo.toFixed(1)} CC\n• Iso: ${p.remainingIso.toFixed(1)} CC\n\n====== CATATAN ======\n${p.catatan || '-'}`;
+        const namaKamar = roomNames[p.id] || `Kamar ${p.id}`;
+        
+        return `KAMAR: ${namaKamar}\nTANGGAL: ${p.tanggal}\nWAKTU: ${p.jamMulai} s/d ${p.jamSelesai}\nPASIEN: ${p.nama || '-'}\n\n====== GAS UNTUK WA ======\n• O2: ${(p.totalElapsedMs / 3600000).toFixed(2)} Jam (${Math.floor(p.accO2_L)} L)\n• N2O: ${p.accN2O_L.toFixed(1)} L\n• AIR: ${p.accAir_L.toFixed(1)} L\n• ${p.gasType}: ${p.accGas_mL.toFixed(2)} mL cairan\n• Durasi: ${hrs}:${mins}:${secs}\n\n====== SISA STOK ======\n• Sevo: ${p.remainingSevo.toFixed(1)} CC\n• Iso: ${p.remainingIso.toFixed(1)} CC\n\n====== CATATAN ======\n${p.catatan || '-'}`;
     }
 
     function exportToCSV(id) {
         const p = patients[id - 1];
+        if(!p) return;
         const totalDetik = Math.floor(p.totalElapsedMs / 1000);
         const hrs = Math.floor(totalDetik / 3600).toString().padStart(2, '0');
         const mins = Math.floor((totalDetik % 3600) / 60).toString().padStart(2, '0');
         const secs = Math.floor(totalDetik % 60).toString().padStart(2, '0');
+        const namaKamar = roomNames[p.id] || `Kamar ${p.id}`;
+        
         let csv = "data:text/csv;charset=utf-8,Parameter,Nilai\n";
-        csv += `Tanggal,${p.tanggal}\nMulai,${p.jamMulai}\nSelesai,${p.jamSelesai}\nNama,${p.nama || '-'}\nDurasi,${hrs}:${mins}:${secs}\nO2 (Jam),${(p.totalElapsedMs / 3600000).toFixed(2)}\nO2 (L),${Math.floor(p.accO2_L)}\nN2O (L),${p.accN2O_L.toFixed(1)}\nAIR (L),${p.accAir_L.toFixed(1)}\nCairan (mL),${p.accGas_mL.toFixed(2)}\nSisa Sevo,${p.remainingSevo.toFixed(1)}\nSisa Iso,${p.remainingIso.toFixed(1)}\n`;
+        csv += `Kamar,${namaKamar}\nTanggal,${p.tanggal}\nMulai,${p.jamMulai}\nSelesai,${p.jamSelesai}\nNama Pasien,${p.nama || '-'}\nDurasi,${hrs}:${mins}:${secs}\nO2 (Jam),${(p.totalElapsedMs / 3600000).toFixed(2)}\nO2 (L),${Math.floor(p.accO2_L)}\nN2O (L),${p.accN2O_L.toFixed(1)}\nAIR (L),${p.accAir_L.toFixed(1)}\nCairan (mL),${p.accGas_mL.toFixed(2)}\nSisa Sevo,${p.remainingSevo.toFixed(1)}\nSisa Iso,${p.remainingIso.toFixed(1)}\n`;
         const encodedUri = encodeURI(csv);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Summary_${p.nama || 'Pasien'}.csv`);
+        link.setAttribute("download", `Summary_${namaKamar.replace(' ', '_')}_${p.nama || 'Pasien'}.csv`);
         document.body.appendChild(link); link.click(); document.body.removeChild(link);
     }
 
     function shareToWhatsApp(id) {
+        if(!patients[id - 1]) return;
         window.open("https://api.whatsapp.com/send?text=" + encodeURIComponent(generateSummaryText(patients[id - 1])), '_blank');
     }
 
     function exportToSamsungNotes(id) {
+        if(!patients[id - 1]) return;
         navigator.clipboard.writeText(generateSummaryText(patients[id - 1])).then(() => {
             alert("Berhasil di Copy! Silakan Tempel di Samsung Notes.");
             window.location.href = "intent://#Intent;scheme=samsungnotes;package=com.samsung.android.app.notes;end";
@@ -573,7 +613,6 @@
     initApp();
     setInterval(coreAppLoop, 1000);
 
-    // Memicu sinkronisasi data kembali saat aplikasi dibuka dari background
     document.addEventListener("resume", function() {
         loadSavedData();
     }, false);
