@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kalkulator Anestesi v5.6 - Multi-Room</title>
+    <title>Kalkulator Anestesi v5.8 - Multi-Room</title>
     <style>
         :root {
             --primary: #2c3e50;
@@ -13,6 +13,7 @@
             --bg: #f5f6fa;
             --warning: #f39c12;
             --samsung: #ff5a00;
+            --purple: #8e44ad;
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -83,6 +84,11 @@
             border-radius: 4px;
             font-size: 14px;
         }
+        /* Style khusus untuk input tanggal agar terlihat interaktif */
+        input.date-picker-trigger {
+            background-color: #fff;
+            cursor: pointer;
+        }
         .clock-display {
             font-family: monospace;
             background: #2c3e50;
@@ -118,6 +124,7 @@
         .btn-start { background-color: var(--success); }
         .btn-end { background-color: var(--warning); }
         .btn-reset { background-color: var(--danger); }
+        .btn-reset-stock { background-color: var(--purple); margin-top: 10px; padding: 8px 12px; font-size: 13px; width: 100%; display: block;}
         .btn-action { background-color: var(--accent); margin-top: 5px;}
         .btn-wa { background-color: #25D366; margin-top: 5px;}
         .btn-samsung { background-color: var(--samsung); margin-top: 5px;}
@@ -204,11 +211,11 @@
     <div id="patient-containers"></div>
 
 <script>
-    const today = new Date().toISOString().split('T')[0];
+    // Inisialisasi awal tanggal sistem (YYYY-MM-DD)
+    const todayRaw = new Date().toISOString().split('T')[0];
     let currentActiveTab = 1;
     let patients = [];
     
-    // Mapping nama kamar berdasarkan ID array
     const roomNames = {
         1: "Siak 1",
         2: "Siak 2",
@@ -218,17 +225,37 @@
         6: "Rokan"
     };
 
+    // Mengonversi YYYY-MM-DD ke DD/MM/YYYY
+    function rawToIndoDate(dateStr) {
+        if (!dateStr) return "";
+        if (dateStr.includes('/')) return dateStr; // Jaga-jaga jika sudah berformat Indo
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dateStr;
+    }
+
+    // Mengonversi DD/MM/YYYY kembali ke YYYY-MM-DD untuk kebutuhan sistem browser
+    function indoToRawDate(dateStr) {
+        if (!dateStr) return todayRaw;
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+            return `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+        return dateStr;
+    }
+
     function loadSavedData() {
         const localData = localStorage.getItem('anestesi_patients_data');
         if (localData) {
             try {
                 patients = JSON.parse(localData);
                 
-                // Jaga-jaga jika data lama di penyimpanan HP masih isi 5, otomatis upgrade ke 6 kamar
                 if (patients.length < 6) {
                     for (let i = patients.length; i < 6; i++) {
                         patients.push({
-                            id: i + 1, nama: '', tanggal: today, o2: 0, carrierType: 'N2O', carrierFlow: 0, gasType: 'Sevoflurane', gasVol: 0,
+                            id: i + 1, nama: '', tanggal: rawToIndoDate(todayRaw), o2: 0, carrierType: 'N2O', carrierFlow: 0, gasType: 'Sevoflurane', gasVol: 0,
                             stockSevo: 250, stockIso: 250, remainingSevo: 250, remainingIso: 250,
                             isRunning: false, lastTickTime: null, totalElapsedMs: 0, jamMulai: '-', jamSelesai: '-',
                             accO2_L: 0, accN2O_L: 0, accAir_L: 0, accGas_mL: 0, catatan: ''
@@ -236,6 +263,13 @@
                     }
                     saveDataToStorage();
                 }
+
+                // Normalisasi data lama ke format baru jika ada yang masih YYYY-MM-DD
+                patients.forEach(p => {
+                    if(p.tanggal && p.tanggal.includes('-')) {
+                        p.tanggal = rawToIndoDate(p.tanggal);
+                    }
+                });
 
                 const sekarang = Date.now();
                 patients.forEach(p => {
@@ -247,9 +281,14 @@
                             p.accO2_L += p.o2 * deltaMenit;
                             if (p.carrierType === 'N2O') p.accN2O_L += p.carrierFlow * deltaMenit;
                             else p.accAir_L += p.carrierFlow * deltaMenit;
+                            
                             const totalFlow = p.o2 + p.carrierFlow;
                             const pembagi = (p.gasType === 'Sevoflurane') ? 183 : 194;
-                            p.accGas_mL += (p.gasVol * totalFlow * 10 * deltaMenit) / pembagi;
+                            const gasUsed = (p.gasVol * totalFlow * 10 * deltaMenit) / pembagi;
+                            p.accGas_mL += gasUsed;
+                            
+                            if (p.gasType === 'Sevoflurane') p.remainingSevo -= gasUsed;
+                            else p.remainingIso -= gasUsed;
                         }
                         p.lastTickTime = sekarang;
                     }
@@ -264,9 +303,8 @@
     }
 
     function createNewData() {
-        // Membuat data dasar untuk 6 kamar otomatis
         patients = Array.from({ length: 6 }, (_, i) => ({
-            id: i + 1, nama: '', tanggal: today, o2: 0, carrierType: 'N2O', carrierFlow: 0, gasType: 'Sevoflurane', gasVol: 0,
+            id: i + 1, nama: '', tanggal: rawToIndoDate(todayRaw), o2: 0, carrierType: 'N2O', carrierFlow: 0, gasType: 'Sevoflurane', gasVol: 0,
             stockSevo: 250, stockIso: 250, remainingSevo: 250, remainingIso: 250,
             isRunning: false, lastTickTime: null, totalElapsedMs: 0, jamMulai: '-', jamSelesai: '-',
             accO2_L: 0, accN2O_L: 0, accAir_L: 0, accGas_mL: 0, catatan: ''
@@ -278,7 +316,6 @@
         localStorage.setItem('anestesi_patients_data', JSON.stringify(patients));
     }
 
-    // Mengubah judul section stok agar mencerminkan nama kamar aslinya
     function initApp() {
         loadSavedData();
         const container = document.getElementById('patient-containers');
@@ -295,7 +332,12 @@
                         </div>
                         <div>
                             <label>Tanggal Tindakan</label>
-                            <input type="date" id="tanggal-${p.id}" value="${p.tanggal}" oninput="updateData(${p.id}, 'tanggal', this.value)">
+                            <input type="text" class="date-picker-trigger" id="tanggal-display-${p.id}" value="${p.tanggal}" 
+                                   placeholder="DD/MM/YYYY" readonly
+                                   onclick="triggerNativeDatePicker(${p.id})">
+                            <input type="date" id="tanggal-hidden-${p.id}" value="${indoToRawDate(p.tanggal)}" 
+                                   style="display:none; position:absolute;" 
+                                   onchange="handleNativeDateChange(${p.id}, this.value)">
                         </div>
                         <div class="full-width">
                             <label>Jam Perangkat (Real-Time) - ${namaKamar}</label>
@@ -341,7 +383,7 @@
                     <div class="stopwatch-controls">
                         <button class="btn-start" id="btn-start-${p.id}" onclick="startTimer(${p.id})" ${p.isRunning?'disabled':''}>START</button>
                         <button class="btn-end" id="btn-end-${p.id}" onclick="stopTimer(${p.id})" ${!p.isRunning?'disabled':''}>END / PAUSE</button>
-                        <button class="btn-reset" id="btn-reset-${p.id}" onclick="resetTimer(${p.id})">RESET</button>
+                        <button class="btn-reset" id="btn-reset-${p.id}" onclick="resetTimer(${p.id})">RESET PASIEN</button>
                     </div>
 
                     <div class="result-box">
@@ -357,10 +399,10 @@
                     </div>
 
                     <label style="font-size: 15px; color: var(--primary); margin-bottom: 10px;">📦 Manajemen Stok Gas - ${namaKamar} (CC)</label>
-                    <div class="grid" style="margin-bottom: 20px;">
+                    <div class="grid" style="margin-bottom: 5px;">
                         <div class="patient-stock-box">
                             <label>Stok Awal Sevo</label>
-                            <input type="number" id="input-stock-sevo-${p.id}" value="${p.stockSevo}" oninput="updatePatientStockBaseline(${p.id}, 'Sevoflurane', this.value)">
+                            <input type="number" id="input-stock-sevo-${p.id}" value="${p.stockSevo.toFixed(0)}" oninput="updatePatientStockBaseline(${p.id}, 'Sevoflurane', this.value)">
                             <div class="stock-remaining">Sisa: <span id="display-stock-sevo-${p.id}">${p.remainingSevo.toFixed(1)}</span> CC</div>
                             <div class="topup-group">
                                 <input type="number" id="flex-add-sevo-${p.id}" placeholder="+ CC">
@@ -369,13 +411,17 @@
                         </div>
                         <div class="patient-stock-box">
                             <label>Stok Awal Iso</label>
-                            <input type="number" id="input-stock-iso-${p.id}" value="${p.stockIso}" oninput="updatePatientStockBaseline(${p.id}, 'Isoflurane', this.value)">
+                            <input type="number" id="input-stock-iso-${p.id}" value="${p.stockIso.toFixed(0)}" oninput="updatePatientStockBaseline(${p.id}, 'Isoflurane', this.value)">
                             <div class="stock-remaining">Sisa: <span id="display-stock-iso-${p.id}">${p.remainingIso.toFixed(1)}</span> CC</div>
                             <div class="topup-group">
                                 <input type="number" id="flex-add-iso-${p.id}" placeholder="+ CC">
                                 <button class="btn-topup-flex" onclick="topUpPatientStockFlexible(${p.id}, 'Isoflurane')">+</button>
                             </div>
                         </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn-reset-stock" onclick="resetStockOnly(${p.id})">🔄 RESET STOK GAS (Default 250 CC)</button>
                     </div>
 
                     <div>
@@ -392,6 +438,24 @@
             `;
         });
         renderDisplayOnly();
+    }
+
+    // Fungsi memicu kalender HP saat input teks diklik
+    function triggerNativeDatePicker(id) {
+        const hiddenInput = document.getElementById(`tanggal-hidden-${id}`);
+        if(hiddenInput) {
+            hiddenInput.showPicker(); // Membuka kalender bawaan perangkat secara paksa
+        }
+    }
+
+    // Memproses perubahan tanggal dari kalender ke format DD/MM/YYYY secara riil
+    function handleNativeDateChange(id, val) {
+        if(!val) return;
+        const formatted = rawToIndoDate(val);
+        const displayInput = document.getElementById(`tanggal-display-${id}`);
+        if(displayInput) displayInput.value = formatted;
+        
+        updateData(id, 'tanggal', formatted);
     }
 
     function switchPatient(id) {
@@ -420,10 +484,16 @@
     function updatePatientStockBaseline(id, type, value) {
         const p = patients[id - 1];
         if(!p) return;
-        if (type === 'Sevoflurane') p.stockSevo = parseFloat(value) || 0;
-        else p.stockIso = parseFloat(value) || 0;
-        recalculateStockOnly(p);
+        const val = parseFloat(value) || 0;
+        if (type === 'Sevoflurane') {
+            p.stockSevo = val;
+            p.remainingSevo = val; 
+        } else {
+            p.stockIso = val;
+            p.remainingIso = val;
+        }
         saveDataToStorage();
+        updateStockDisplayInline(p);
     }
 
     function topUpPatientStockFlexible(id, type) {
@@ -437,14 +507,16 @@
 
         if (type === 'Sevoflurane') {
             p.stockSevo += amt;
+            p.remainingSevo += amt;
             if(baseInpt) baseInpt.value = p.stockSevo.toFixed(0);
         } else {
             p.stockIso += amt;
+            p.remainingIso += amt;
             if(baseInpt) baseInpt.value = p.stockIso.toFixed(0);
         }
         addInpt.value = "";
-        recalculateStockOnly(p);
         saveDataToStorage();
+        updateStockDisplayInline(p);
     }
 
     function getFormattedGlobalTime() {
@@ -483,11 +555,37 @@
     }
 
     function resetTimer(id) {
-        if (!confirm("Reset data kamar ini?")) return;
+        if (!confirm("Reset data pasien kamar ini? (Sisa stok gas terakhir tidak akan berubah)")) return;
         const p = patients[id - 1];
         if(!p) return;
-        p.isRunning = false; p.lastTickTime = null; p.totalElapsedMs = 0; p.jamMulai = '-'; p.jamSelesai = '-';
-        p.accO2_L = 0; p.accN2O_L = 0; p.accAir_L = 0; p.accGas_mL = 0;
+        
+        p.nama = '';
+        p.catatan = '';
+        p.o2 = 0;
+        p.carrierFlow = 0;
+        p.gasVol = 0;
+        p.tanggal = rawToIndoDate(todayRaw);
+        
+        p.isRunning = false; 
+        p.lastTickTime = null; 
+        p.totalElapsedMs = 0; 
+        p.jamMulai = '-'; 
+        p.jamSelesai = '-';
+        
+        p.accO2_L = 0; 
+        p.accN2O_L = 0; 
+        p.accAir_L = 0; 
+        p.accGas_mL = 0;
+
+        const inputNama = document.getElementById(`nama-${id}`); if(inputNama) inputNama.value = '';
+        
+        const displayInput = document.getElementById(`tanggal-display-${id}`); if(displayInput) displayInput.value = p.tanggal;
+        const hiddenInput = document.getElementById(`tanggal-hidden-${id}`); if(hiddenInput) hiddenInput.value = todayRaw;
+
+        const inputO2 = document.getElementById(`o2-${id}`); if(inputO2) inputO2.value = 0;
+        const inputCF = document.getElementById(`carrierFlow-${id}`); if(inputCF) inputCF.value = 0;
+        const inputGV = document.getElementById(`gasVol-${id}`); if(inputGV) inputGV.value = 0;
+        const inputCatatan = document.getElementById(`catatan-${id}`); if(inputCatatan) inputCatatan.value = '';
 
         document.getElementById(`btn-start-${id}`).disabled = false;
         document.getElementById(`btn-end-${id}`).disabled = true;
@@ -496,9 +594,33 @@
         document.getElementById(`timer-display-${id}`).innerText = "00:00:00";
         document.getElementById(`lbl-mulai-${id}`).innerText = "-";
         document.getElementById(`lbl-selesai-${id}`).innerText = "-";
-        recalculateStockOnly(p);
+        
+        p.stockSevo = p.remainingSevo;
+        p.stockIso = p.remainingIso;
+        
+        const baseSevoInpt = document.getElementById(`input-stock-sevo-${id}`); if(baseSevoInpt) baseSevoInpt.value = p.stockSevo.toFixed(0);
+        const baseIsoInpt = document.getElementById(`input-stock-iso-${id}`); if(baseIsoInpt) baseIsoInpt.value = p.stockIso.toFixed(0);
+
         saveDataToStorage();
         renderDisplayOnly();
+        updateStockDisplayInline(p);
+    }
+
+    function resetStockOnly(id) {
+        if (!confirm("Kembalikan baseline & sisa stok gas kamar ini ke default 250 CC?")) return;
+        const p = patients[id - 1];
+        if(!p) return;
+
+        p.stockSevo = 250;
+        p.stockIso = 250;
+        p.remainingSevo = 250;
+        p.remainingIso = 250;
+
+        const baseSevoInpt = document.getElementById(`input-stock-sevo-${id}`); if(baseSevoInpt) baseSevoInpt.value = 250;
+        const baseIsoInpt = document.getElementById(`input-stock-iso-${id}`); if(baseIsoInpt) baseIsoInpt.value = 250;
+
+        saveDataToStorage();
+        updateStockDisplayInline(p);
     }
 
     function accumulateGasIncrementally(p) {
@@ -511,23 +633,28 @@
             p.accO2_L += p.o2 * deltaMenit;
             if (p.carrierType === 'N2O') p.accN2O_L += p.carrierFlow * deltaMenit;
             else p.accAir_L += p.carrierFlow * deltaMenit;
+            
             const totalFlow = p.o2 + p.carrierFlow;
             const pembagi = (p.gasType === 'Sevoflurane') ? 183 : 194;
-            p.accGas_mL += (p.gasVol * totalFlow * 10 * deltaMenit) / pembagi;
+            const gasUsed = (p.gasVol * totalFlow * 10 * deltaMenit) / pembagi;
+            
+            p.accGas_mL += gasUsed;
+            
+            if (p.gasType === 'Sevoflurane') p.remainingSevo -= gasUsed;
+            else p.remainingIso -= gasUsed;
+            
             p.lastTickTime = sekarang;
         }
     }
 
-    function recalculateStockOnly(p) {
-        let usedSevo = (p.gasType === 'Sevoflurane') ? p.accGas_mL : 0;
-        let usedIso = (p.gasType === 'Isoflurane') ? p.accGas_mL : 0;
-        p.remainingSevo = p.stockSevo - usedSevo;
-        p.remainingIso = p.stockIso - usedIso;
-
+    function updateStockDisplayInline(p) {
         if (p.id === currentActiveTab) {
             const s = document.getElementById(`display-stock-sevo-${p.id}`);
             const i = document.getElementById(`display-stock-iso-${p.id}`);
-            if (s && i) { s.innerText = p.remainingSevo.toFixed(1); i.innerText = p.remainingIso.toFixed(1); }
+            if (s && i) { 
+                s.innerText = Math.max(0, p.remainingSevo).toFixed(1); 
+                i.innerText = Math.max(0, p.remainingIso).toFixed(1); 
+            }
         }
     }
 
@@ -536,7 +663,7 @@
         let shouldSave = false;
         patients.forEach(p => {
             if (p.isRunning) { accumulateGasIncrementally(p); shouldSave = true; }
-            recalculateStockOnly(p);
+            updateStockDisplayInline(p);
         });
         if(shouldSave) saveDataToStorage(); 
         renderDisplayOnly(nowStr);
